@@ -1,0 +1,187 @@
+# ===========================
+# NewsPulse — Docker Compose
+# ===========================
+# Services:
+#   django      — Gunicorn web server (port 8000)
+#   celery      — Celery worker (scrapes, clusters, embeds)
+#   celerybeat  — Celery beat scheduler (scrape/cluster/embed)
+#   flower      — Celery monitoring UI (port 5555)
+#   redis       — Celery broker + cache
+#   postgres    — PostgreSQL 17 + pgvector
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f celery   # watch worker logs
+#   docker compose down -v          # stop + remove volumes
+# ===========================
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: np-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-newspulse}
+      POSTGRES_USER: ${POSTGRES_USER:-newsuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-newssecret}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U newsuser -d newspulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: np-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  django:
+    build: .
+    container_name: np-django
+    restart: unless-stopped
+    command: >
+      gunicorn core.wsgi:application
+      --bind 0.0.0.0:8000
+      --workers 2
+      --threads 2
+      --access-logfile -
+    environment:
+      DJANGO_DEBUG: "True"
+      DATABASE_NAME: ${POSTGRES_DB:-newspulse}
+      DATABASE_USER: ${POSTGRES_USER:-newsuser}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-newssecret}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/1
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EMBEDDING_MODEL_PATH: /data/embeddings-models
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./worker:/app/worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/clusters/tabs/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  celery:
+    build: .
+    container_name: np-celery
+    restart: unless-stopped
+    command: >
+      celery -A core worker
+      --loglevel=info
+      --concurrency=4
+      --pool=solo
+      --logfile=/var/log/celery/worker.log
+    environment:
+      DJANGO_DEBUG: "True"
+      DATABASE_NAME: ${POSTGRES_DB:-newspulse}
+      DATABASE_USER: ${POSTGRES_USER:-newsuser}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-newssecret}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/1
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EMBEDDING_MODEL_PATH: /data/embeddings-models
+    volumes:
+      - ./worker:/app/worker
+      - celery_logs:/var/log/celery
+      - model_cache:/data/embeddings-models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celerybeat:
+    build: .
+    container_name: np-celerybeat
+    restart: unless-stopped
+    command: >
+      celery -A core beat
+      --loglevel=info
+      --logfile=/var/log/celery/beat.log
+      --schedule=/tmp/celerybeat-schedule
+    environment:
+      DJANGO_DEBUG: "True"
+      DATABASE_NAME: ${POSTGRES_DB:-newspulse}
+      DATABASE_USER: ${POSTGRES_USER:-newsuser}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-newssecret}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/1
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - celery_logs:/var/log/celery
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  flower:
+    build: .
+    container_name: np-flower
+    restart: unless-stopped
+    command: >
+      celery -A core flower
+      --port=5555
+      --broker=redis://redis:6379/0
+      --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASS:-admin}
+      --persist=false
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+    ports:
+      - "127.0.0.1:5555:5555"
+    depends_on:
+      - redis
+      - celery
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: np-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://django:8000/api
+    depends_on:
+      - django
+
+volumes:
+  pg_data:
+    driver: local
+  redis_data:
+    driver: local
+  celery_logs:
+    driver: local
+  model_cache:
+    driver: local
