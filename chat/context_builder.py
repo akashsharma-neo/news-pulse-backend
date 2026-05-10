@@ -4,16 +4,15 @@ Handles aggregation of article summaries, source links, and message history.
 """
 
 from typing import List, Dict, Any
-import openai
 from django.db import models
 from .models import ChatMessage
 from articles.models import TopicCluster
 
 
 class ChatContextBuilder:
-    """Builds the conversation payload for OpenAI API calls."""
+    """Builds the conversation payload for the OpenAI API."""
 
-    def __run_query(self, cluster: TopicCluster) -> str:
+    def _run_query(self, cluster: TopicCluster) -> str:
         """Aggregates article summary and source info into a text block."""
         context = f"Article Summary: {cluster.summary}\n"
         if cluster.primary_article.source:

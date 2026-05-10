@@ -5,12 +5,21 @@ NewsPulse chat API views.
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.conf import settings
 from .models import ChatMessage
 from .serializers import ChatMessageSerializer
 from .context_builder import ChatContextBuilder
 from articles.models import TopicCluster
-import openai
-from django.conf import settings
+
+# Lazy import to avoid hard dependency if openai isn't installed
+_openai_client = None
+
+def get_openai_client():
+    global _openai_client
+    if _openai_client is None:
+        from openai import OpenAI
+        _openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    return _openai_client
 
 
 class ChatMessageViewSet(viewsets.ModelViewSet):
@@ -32,7 +41,7 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
         """
         Sends a user message and returns the OpenAI assistant response.
         Expects: cluster_id (in body or query) and content (in body).
-        
+
         Example Body:
         {
             "cluster_id": "...",
@@ -67,13 +76,15 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
         builder = ChatContextBuilder()
         messages_for_api = builder.get_messages_for_api(cluster)
 
-        # 3. Call OpenAI
-        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        # 3. Call OpenAI API
+        client = get_openai_client()
 
         try:
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages_for_api
+                model=settings.OPENAI_MODEL,
+                messages=messages_for_api,
+                max_tokens=512,
+                temperature=0.7,
             )
             assistant_content = response.choices[0].message.content
 

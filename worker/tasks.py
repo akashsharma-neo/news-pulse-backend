@@ -536,6 +536,10 @@ def cluster_and_summarize() -> dict:
                 cat_slug, len(cluster_articles), primary.title[:60],
             )
 
+    # Dispatch summarization task for the newly created clusters
+    if total_clusters > 0:
+        summarize_clusters.delay()
+
     # Count leftover (singletons — articles with no similar match)
     total_leftover = len(articles) - total_clustered
 
@@ -548,6 +552,82 @@ def cluster_and_summarize() -> dict:
         "articles_clustered": total_clustered,
         "leftover": total_leftover,
     }
+
+
+# ---------------------------------------------------------------------------
+# Summarization (Task 1.6)
+# ---------------------------------------------------------------------------
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+)
+def summarize_clusters(self) -> dict:
+    """
+    Generate AI summaries for TopicClusters with empty summaries.
+
+    Calls OpenAI to produce a concise 60-80 word summary based on the
+    primary article's title, content, and source information.
+
+    Returns {"summarized": N, "skipped": N}.
+    """
+    from django.conf import settings
+
+    empty_clusters = TopicCluster.objects.filter(summary="")
+    if not empty_clusters.exists():
+        logger.info("No clusters need summarization")
+        return {"summarized": 0, "skipped": 0}
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        model = getattr(settings, "OPENAI_MODEL", "gpt-4o-mini")
+    except Exception as exc:
+        logger.error("Failed to initialize OpenAI client: %s", exc)
+        raise self.retry(exc=exc)
+
+    summarized = 0
+    skipped = 0
+
+    for cluster in empty_clusters:
+        article = cluster.primary_article
+        if not article:
+            skipped += 1
+            continue
+
+        title = article.title or ""
+        content = article.full_text or ""
+        source_name = article.source.name if article.source else "Unknown"
+        url = article.url or ""
+
+        prompt = (
+            f"Write a concise news summary (60-80 words) of the following article. "
+            f"Do not include any introductory phrases — start directly with the summary content.\n\n"
+            f"Title: {title}\n"
+            f"Source: {source_name}\n"
+            f"URL: {url}\n"
+            f"Content: {content[:3000]}"
+        )
+
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200,
+                temperature=0.3,
+            )
+            summary = response.choices[0].message.content.strip()
+            cluster.summary = summary
+            cluster.save(update_fields=["summary"])
+            summarized += 1
+            logger.info("Summarized cluster %s: '%s'", cluster.pk, summary[:80])
+        except Exception as exc:
+            logger.error("Failed to summarize cluster %s: %s", cluster.pk, exc)
+            skipped += 1
+
+    return {"summarized": summarized, "skipped": skipped}
 
 
 # ---------------------------------------------------------------------------
@@ -645,8 +725,9 @@ def run_full_pipeline() -> dict:
     Dispatches the full NewsPulse pipeline as a chain of Celery tasks:
     1. Scrape all active sources
     2. Cluster unclustered articles
-    3. Generate embeddings for articles
-    4. Generate embeddings for clusters
+    3. Summarize clusters (auto-dispatched by cluster_and_summarize)
+    4. Generate embeddings for articles
+    5. Generate embeddings for clusters
 
     Returns a summary of dispatched tasks.
     """
@@ -662,6 +743,7 @@ def run_full_pipeline() -> dict:
     return {
         "scrape_task_id": scrape_result.id,
         "cluster_task_id": cluster_result.id,
+        "summarize_task": "auto-dispatched by cluster_and_summarize",
         "embed_task_id": embed_result.id,
         "cluster_embed_task_id": cluster_embed_result.id,
     }

@@ -139,6 +139,7 @@ CACHES = {
 
 # OpenAI
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
 
 # ---------------------------------------------------------------------------
 # Swagger / OpenAPI (drf-spectacular)
@@ -165,3 +166,35 @@ SCRAPER_DELAY = 1.0  # seconds between requests to same domain
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
 ]
+
+# ---------------------------------------------------------------------------
+# Email (SMTP)
+# ---------------------------------------------------------------------------
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.smtp.EmailBackend',
+)
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'news@newspulse.app')
+
+# Base URL for unsubscribe links (set in dev .env)
+BASE_URL = os.environ.get('BASE_URL', 'http://localhost:8000')
+
+# ---------------------------------------------------------------------------
+# Celery Beat — periodic tasks
+# ---------------------------------------------------------------------------
+CELERY_BEAT_SCHEDULE = {
+    'daily-digest': {
+        'task': 'digest.tasks.generate_daily_digest_task',
+        'schedule': 86400,  # every 24 hours
+        'options': {'queue': 'digest'},
+    },
+    'summarize-clusters': {
+        'task': 'worker.tasks.summarize_clusters',
+        'schedule': 3600,  # every hour as backup
+    },
+}
