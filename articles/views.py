@@ -46,6 +46,11 @@ class TopicClusterViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(primary_article__source__category__slug=tab)
         return qs
 
+    @action(detail=False, methods=["get"])
+    def tabs(self, request):
+        """GET /api/clusters/tabs/ — list navigation tabs."""
+        return Response(TabSerializer(Tab.objects.all(), many=True).data)
+
     @action(detail=False, url_path="list_cached", url_name="list_cached")
     def list_cached(self, request):
         """Cached version of the cluster list endpoint.
