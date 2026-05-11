@@ -210,6 +210,7 @@ class InteractionViewSet(viewsets.ModelViewSet):
 
     serializer_class = UserInteractionSerializer
     permission_classes = [AllowAny]
+    pagination_class = None
 
     def get_queryset(self):
         """Return interactions, optionally filtered by session_id.

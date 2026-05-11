@@ -24,13 +24,18 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError("The Email field must be set")
         email = self.normalize_email(email)
+        name = name or ""
         user = self.model(email=email, phone=phone, name=name, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, email, phone=None, name=None, password=None, **extra_fields):
-        """Create and return a superuser."""
+    def create_superuser(self, email=None, phone=None, name=None, password=None, **extra_fields):
+        """Create and return a superuser.
+
+        Accepts either email or phone (at least one required).
+        If only phone is provided, a placeholder email is generated.
+        """
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
 
@@ -38,6 +43,14 @@ class UserManager(BaseUserManager):
             raise ValueError("Superuser must have is_staff=True.")
         if extra_fields.get("is_superuser") is not True:
             raise ValueError("Superuser must have is_superuser=True.")
+
+        if not email and not phone:
+            raise ValueError("Superuser must have at least an email or a phone number.")
+
+        # If only phone provided, generate a placeholder email for the USERNAME_FIELD
+        if not email and phone:
+            phone_clean = phone.replace(" ", "").replace("-", "").replace("+", "")
+            email = f"{phone_clean}@newspulse.local"
 
         return self.create_user(email, phone, name, password, **extra_fields)
 
@@ -58,7 +71,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
 
     USERNAME_FIELD = "email"
-    REQUIRED_FIELDS = ["phone"]
+    REQUIRED_FIELDS = []
 
     class Meta:
         db_table = "users_user"
@@ -117,7 +130,7 @@ class UserInteraction(models.Model):
         help_text="Time spent on the cluster in seconds (for 'dwell' type)",
     )
     created_at = models.DateTimeField(
-        auto_now_add=True,
+        default=timezone.now,
         help_text="When this interaction was recorded",
     )
 

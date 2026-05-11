@@ -404,6 +404,36 @@ class UserIntegrationTest(TestCase):
         self.assertTrue(admin.is_superuser)
         self.assertEqual(admin.email, "admin@example.com")
 
+    def test_superuser_email_only(self):
+        """Can create a superuser with only email (phone is None)."""
+        admin = User.objects.create_superuser(
+            email="emailonly@example.com",
+            password="adminpass123",
+        )
+        self.assertTrue(admin.is_staff)
+        self.assertTrue(admin.is_superuser)
+        self.assertEqual(admin.email, "emailonly@example.com")
+        self.assertIsNone(admin.phone)
+        self.assertEqual(admin.name, "")
+
+    def test_superuser_phone_only(self):
+        """Can create a superuser with only phone (generates placeholder email)."""
+        admin = User.objects.create_superuser(
+            phone="+1987654321",
+            password="adminpass123",
+        )
+        self.assertTrue(admin.is_staff)
+        self.assertTrue(admin.is_superuser)
+        self.assertEqual(admin.phone, "+1987654321")
+        self.assertTrue(admin.email.startswith("1987654321@"))
+        self.assertIn("newspulse.local", admin.email)
+
+    def test_superuser_neither_email_nor_phone(self):
+        """Cannot create a superuser without email or phone."""
+        with self.assertRaises(ValueError) as ctx:
+            User.objects.create_superuser(password="adminpass123")
+        self.assertIn("email or a phone number", str(ctx.exception))
+
     def test_register_minimal_user(self):
         """Can register a user with only email (phone is optional)."""
         data = {
