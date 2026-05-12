@@ -582,7 +582,7 @@ def summarize_clusters(self) -> dict:
 
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
         model = getattr(settings, "OPENAI_MODEL", "gpt-4o-mini")
     except Exception as exc:
         logger.error("Failed to initialize OpenAI client: %s", exc)

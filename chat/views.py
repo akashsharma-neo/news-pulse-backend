@@ -18,7 +18,7 @@ def get_openai_client():
     global _openai_client
     if _openai_client is None:
         from openai import OpenAI
-        _openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        _openai_client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
     return _openai_client
 
 

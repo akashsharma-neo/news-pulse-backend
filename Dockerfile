@@ -86,8 +86,11 @@ COPY --from=builder /install /usr/local
 # Copy project code
 COPY --chown=app:app . .
 
-# Create log dir
-RUN mkdir -p /var/log/celery
+# Log dir, collect static for WhiteNoise + Gunicorn (no runserver static serving)
+RUN mkdir -p /var/log/celery /app/staticfiles \
+    && DJANGO_SECRET_KEY=collectstatic-build-not-secret \
+       python manage.py collectstatic --noinput \
+    && chown -R app:app /app/staticfiles /var/log/celery
 
 USER app
 
