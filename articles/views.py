@@ -5,11 +5,36 @@ Provides read-only endpoints for TopicClusters and Articles with
 tab-based filtering and ordering.
 """
 
+from django.db.models import F
+from django.db.models.functions import Coalesce
+
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Tab, TopicCluster, Article
 from .serializers import TopicClusterSerializer, ArticleSerializer, TabSerializer
+
+
+def cluster_feed_queryset(tab: str | None = None):
+    """Topic clusters ready for the tab feed: digest text present, newest stories first."""
+    qs = (
+        TopicCluster.objects.select_related(
+            "primary_article",
+            "primary_article__source",
+            "primary_article__source__category",
+        )
+        .exclude(summary="")
+        .annotate(
+            story_published_at=Coalesce(
+                F("primary_article__published_at"),
+                F("created_at"),
+            )
+        )
+        .order_by("-story_published_at", "-created_at")
+    )
+    if tab:
+        qs = qs.filter(primary_article__source__category__slug=tab)
+    return qs
 
 
 class TopicClusterViewSet(viewsets.ReadOnlyModelViewSet):
@@ -22,29 +47,30 @@ class TopicClusterViewSet(viewsets.ReadOnlyModelViewSet):
 
     Query parameters:
         tab: Filter clusters by tab slug (e.g. 'india', 'sports').
-        ordering: Sort by 'created_at' (default) or 'published_at'.
+        ordering: Sort by primary article publish time or cluster created_at.
         page: Page number for pagination.
     """
 
     serializer_class = TopicClusterSerializer
     filter_backends = [filters.OrderingFilter]
-    ordering_fields = ["created_at", "published_at"]
-    ordering = ["-created_at"]
+    ordering_fields = [
+        "primary_article__published_at",
+        "story_published_at",
+        "created_at",
+    ]
+    ordering = ["-primary_article__published_at", "-created_at"]
 
     def get_queryset(self):
-        """Return clusters with related source/category data prefetched.
-
-        Optionally filters by tab slug from query params.
-        """
-        qs = TopicCluster.objects.select_related(
+        """Return feed-ready clusters; detail allows clusters still awaiting summary."""
+        base = TopicCluster.objects.select_related(
             "primary_article",
             "primary_article__source",
             "primary_article__source__category",
-        ).all()
+        )
+        if self.action == "retrieve":
+            return base
         tab = self.request.query_params.get("tab")
-        if tab:
-            qs = qs.filter(primary_article__source__category__slug=tab)
-        return qs
+        return cluster_feed_queryset(tab=tab or None)
 
     @action(detail=False, methods=["get"])
     def tabs(self, request):
@@ -54,26 +80,21 @@ class TopicClusterViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, url_path="list_cached", url_name="list_cached")
     def list_cached(self, request):
         """Cached version of the cluster list endpoint.
-        
-        Uses CacheManager to cache response based on the 'tab' query enough parameter.
+
+        Uses CacheManager to cache response based on the 'tab' query parameter.
         """
         from core.cache_utils import CacheManager
-        
+
         tab = request.query_params.get("tab", "all")
         cache_key = f"clusters_list_{tab}"
 
         def fetcher():
-            qs = TopicCluster.objects.select_related(
-                "primary_article",
-                "primary_article__source",
-                "primary_article__source__category",
-            ).all()
-            if tab != "all":
-                qs = qs.filter(primary_article__source__category__slug=tab)
+            qs = cluster_feed_queryset(
+                tab=None if tab == "all" else tab,
+            )
             return TopicClusterSerializer(qs, many=True).data
 
         return Response(CacheManager.get_or_set(cache_key, fetcher, timeout=300))
-
 
 
 class ArticleViewSet(viewsets.ReadOnlyModelViewSet):
@@ -90,7 +111,7 @@ class ArticleViewSet(viewsets.ReadOnlyModelViewSet):
     """
 
     serializer_class = ArticleSerializer
-    filter_backends = []
+    filter_backends = [filters.OrderingFilter]
     ordering_fields = ["published_at"]
     ordering = ["-published_at"]
 

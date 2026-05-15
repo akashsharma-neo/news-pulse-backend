@@ -47,6 +47,7 @@ RUN pip install --no-cache-dir --prefix=/install \
     shellingham \
     rich \
     pygments \
+    pydantic \
     markdown-it-py \
     mdurl \
     click \
@@ -88,8 +89,7 @@ COPY --chown=app:app . .
 
 # Log dir, collect static for WhiteNoise + Gunicorn (no runserver static serving)
 RUN mkdir -p /var/log/celery /app/staticfiles \
-    && DJANGO_SECRET_KEY=collectstatic-build-not-secret \
-       python manage.py collectstatic --noinput \
+&& python manage.py collectstatic --noinput \
     && chown -R app:app /app/staticfiles /var/log/celery
 
 USER app

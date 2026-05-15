@@ -18,7 +18,10 @@ def get_openai_client():
     global _openai_client
     if _openai_client is None:
         from openai import OpenAI
-        _openai_client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
+        _openai_client = OpenAI(
+            api_key=settings.OPENAI_COMPATIBLE_API_KEY,
+            base_url=settings.OPENAI_COMPATIBLE_BASE_URL,
+        )
     return _openai_client
 
 
@@ -81,7 +84,7 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
 
         try:
             response = client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
+                model=settings.OPENAI_COMPATIBLE_MODEL,
                 messages=messages_for_api,
                 max_tokens=512,
                 temperature=0.7,

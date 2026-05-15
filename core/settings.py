@@ -127,6 +127,13 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_ACCEPT_CONTENT = ['json']
+# Richer task timeline/history in Flower (and other monitors using Celery events).
+CELERY_WORKER_SEND_TASK_EVENTS = True
+CELERY_TASK_SEND_SENT_EVENT = True
+CELERY_TASK_ROUTES = {
+    'worker.tasks.generate_embeddings_task': {'queue': 'embeddings'},
+    'worker.tasks.generate_cluster_embeddings_task': {'queue': 'embeddings'},
+}
 
 # Redis (caching)
 CACHES = {
@@ -139,10 +146,25 @@ CACHES = {
     }
 }
 
-# OpenAI / OpenRouter
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
-OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'https://openrouter.ai/api/v1')
-OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'inclusionai/ring-2.6-1t:free')
+# OpenAI-compatible LLM API (OpenRouter, OpenAI, etc.)
+# Prefer OPENAI_COMPATIBLE_*; OPENAI_* names are legacy fallbacks.
+OPENAI_COMPATIBLE_API_KEY = os.environ.get(
+    'OPENAI_COMPATIBLE_API_KEY',
+    os.environ.get('OPENAI_API_KEY', ''),
+)
+OPENAI_COMPATIBLE_BASE_URL = os.environ.get(
+    'OPENAI_COMPATIBLE_BASE_URL',
+    os.environ.get('OPENAI_BASE_URL', 'https://openrouter.ai/api/v1'),
+)
+OPENAI_COMPATIBLE_MODEL = os.environ.get(
+    'OPENAI_COMPATIBLE_MODEL',
+    os.environ.get('OPENAI_MODEL', 'inclusionai/ring-2.6-1t:free'),
+)
+
+# Legacy aliases (deprecated env names)
+OPENAI_API_KEY = OPENAI_COMPATIBLE_API_KEY
+OPENAI_BASE_URL = OPENAI_COMPATIBLE_BASE_URL
+OPENAI_MODEL = OPENAI_COMPATIBLE_MODEL
 
 # ---------------------------------------------------------------------------
 # Swagger / OpenAPI (drf-spectacular)
@@ -194,7 +216,6 @@ CELERY_BEAT_SCHEDULE = {
     'daily-digest': {
         'task': 'digest.tasks.generate_daily_digest_task',
         'schedule': 86400,  # every 24 hours
-        'options': {'queue': 'digest'},
     },
     'summarize-clusters': {
         'task': 'worker.tasks.summarize_clusters',

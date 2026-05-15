@@ -31,7 +31,9 @@ docker compose exec django python manage.py seed_news_catalog
 
 ## After seeding
 
-Seeding does **not** fetch articles. To populate articles, run your Celery scrape pipeline (e.g. tasks that call `scrape_sources` / per-source scrapes) according to your schedule or manually.
+Seeding does **not** fetch articles. Next steps (Celery worker + Beat, scrape → cluster → summarize, env vars, verification):
+
+**[celery-pipeline.md](celery-pipeline.md)** — full background ingestion process and how stories appear in the UI.
 
 ## RSS URLs
 

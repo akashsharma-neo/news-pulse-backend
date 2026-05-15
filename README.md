@@ -2,4 +2,12 @@
 
 Django REST API, Celery workers, and Docker Compose stack for the NewsPulse service.
 
-**Operational docs** (Docker static files, seeding tabs/sources, compose notes): see [docs/README.md](docs/README.md).
+**Operational docs:** [docs/README.md](docs/README.md)
+
+| Topic | Doc |
+|-------|-----|
+| **Background news ingestion (scrape → cluster → feed)** | [docs/celery-pipeline.md](docs/celery-pipeline.md) |
+| Environment variables (LLM / DB) | [.env.example](.env.example) |
+| Seed tabs & RSS sources | [docs/seed-tabs-and-sources.md](docs/seed-tabs-and-sources.md) |
+| Celery / Flower monitoring | [docs/flower-celery-monitoring.md](docs/flower-celery-monitoring.md) |
+| Static files in Docker | [docs/static-files-docker.md](docs/static-files-docker.md) |

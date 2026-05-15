@@ -98,6 +98,7 @@ class Article(models.Model):
         help_text="Headline of the article",
     )
     url = models.URLField(
+        max_length=2048,
         help_text="Canonical URL of the original article",
     )
     source = models.ForeignKey(

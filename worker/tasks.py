@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 import requests
 from bs4 import BeautifulSoup
-from celery import shared_task
+from celery import chord, group, shared_task
 from celery.utils.log import get_task_logger
 from django.utils import timezone as dj_timezone
 from feedparser import parse as parse_rss
@@ -297,8 +297,8 @@ def scrape_source(self, source_id: int) -> dict:
             pub_at = dj_timezone.now()
 
         Article.objects.create(
-            title=article_data["title"],
-            url=article_data["url"],
+            title=article_data["title"][:1000],
+            url=article_data["url"][:2048],
             source=source,
             full_text=article_data.get("content", ""),
             published_at=pub_at,
@@ -317,24 +317,25 @@ def scrape_sources() -> dict:
     """
     Main entry point: scrape all active sources.
 
-    Dispatches per-source tasks and returns aggregate results.
+    Runs per-source scrapes in parallel, then clusters and summarizes when all
+    scrapes finish (Celery chord). Hourly Beat cluster_and_summarize remains a
+    safety net for missed articles.
     """
-    active_sources = list(Source.objects.filter(active=True).values_list("id", "name"))
+    active_source_ids = list(
+        Source.objects.filter(active=True).values_list("id", flat=True)
+    )
 
-    if not active_sources:
+    if not active_source_ids:
         logger.warning("No active sources configured")
-        return {"total_fetched": 0, "total_created": 0, "total_skipped": 0, "details": []}
+        return {"dispatched": 0}
 
-    results = []
-    for source_id, source_name in active_sources:
-        result = scrape_source.delay(source_id)
-        results.append({
-            "source": source_name,
-            "task_id": result.id,
-        })
+    async_result = chord(
+        group(scrape_source.s(source_id) for source_id in active_source_ids),
+        cluster_and_summarize.si(),
+    ).apply_async()
 
-    logger.info("Dispatched %d scrape tasks", len(results))
-    return {"dispatched": len(results), "tasks": results}
+    logger.info("Dispatched scrape chord for %d sources", len(active_source_ids))
+    return {"dispatched": len(active_source_ids), "chord_id": async_result.id}
 
 
 # ---------------------------------------------------------------------------
@@ -582,8 +583,11 @@ def summarize_clusters(self) -> dict:
 
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
-        model = getattr(settings, "OPENAI_MODEL", "gpt-4o-mini")
+        client = OpenAI(
+            api_key=settings.OPENAI_COMPATIBLE_API_KEY,
+            base_url=settings.OPENAI_COMPATIBLE_BASE_URL,
+        )
+        model = settings.OPENAI_COMPATIBLE_MODEL
     except Exception as exc:
         logger.error("Failed to initialize OpenAI client: %s", exc)
         raise self.retry(exc=exc)
@@ -722,28 +726,24 @@ def run_full_pipeline() -> dict:
     """
     Run the complete pipeline: scrape → cluster → summarize → embed.
 
-    Dispatches the full NewsPulse pipeline as a chain of Celery tasks:
-    1. Scrape all active sources
-    2. Cluster unclustered articles
-    3. Summarize clusters (auto-dispatched by cluster_and_summarize)
-    4. Generate embeddings for articles
-    5. Generate embeddings for clusters
+    Dispatches the full NewsPulse pipeline:
+    1. Scrape all active sources (chord callback runs cluster + summarize)
+    2. Generate embeddings for articles (embeddings queue)
+    3. Generate embeddings for clusters (embeddings queue)
 
     Returns a summary of dispatched tasks.
     """
     scrape_result = scrape_sources.delay()
-    cluster_result = cluster_and_summarize.delay()
     embed_result = generate_embeddings_task.delay()
     cluster_embed_result = generate_cluster_embeddings_task.delay()
 
     logger.info(
-        "Full pipeline dispatched: scrape=%s cluster=%s embed=%s cluster_embed=%s",
-        scrape_result.id, cluster_result.id, embed_result.id, cluster_embed_result.id,
+        "Full pipeline dispatched: scrape_chord=%s embed=%s cluster_embed=%s",
+        scrape_result.id, embed_result.id, cluster_embed_result.id,
     )
     return {
-        "scrape_task_id": scrape_result.id,
-        "cluster_task_id": cluster_result.id,
-        "summarize_task": "auto-dispatched by cluster_and_summarize",
+        "scrape_chord_id": scrape_result.id,
+        "summarize_task": "auto-dispatched by cluster_and_summarize via scrape chord",
         "embed_task_id": embed_result.id,
         "cluster_embed_task_id": cluster_embed_result.id,
     }
