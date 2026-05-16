@@ -1,0 +1,7 @@
+# Optional overrides for phone/LAN testing (merge into .env).
+# Replace YOUR_LAN_IP with: ipconfig getifaddr en0  (macOS)
+
+# DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,YOUR_LAN_IP
+# BASE_URL=http://YOUR_LAN_IP:8000
+# CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://YOUR_LAN_IP:3000
+# NEXT_PUBLIC_API_URL=http://YOUR_LAN_IP:8000/api

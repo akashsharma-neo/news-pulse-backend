@@ -2,17 +2,29 @@
 NewsPulse chat API views.
 """
 
+import logging
+
+from django.conf import settings
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from django.conf import settings
+from rest_framework.throttling import ScopedRateThrottle
+
 from .models import ChatMessage
 from .serializers import ChatMessageSerializer
 from .context_builder import ChatContextBuilder
 from articles.models import TopicCluster
 
-# Lazy import to avoid hard dependency if openai isn't installed
+logger = logging.getLogger(__name__)
+
+
+class ChatSendThrottle(ScopedRateThrottle):
+    scope = 'chat_send'
+
+
 _openai_client = None
+
 
 def get_openai_client():
     global _openai_client
@@ -30,16 +42,49 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
 
     queryset = ChatMessage.objects.all()
     serializer_class = ChatMessageSerializer
+    http_method_names = ['get', 'head', 'options', 'post']
+
+    def get_permissions(self):
+        if self.action in ('send_message', 'list', 'retrieve'):
+            return [IsAuthenticated()]
+        return [AllowAny()]
+
+    def create(self, request, *args, **kwargs):
+        return Response(
+            {'error': 'Use POST /api/messages/send/ with cluster_id and content.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def partial_update(self, request, *args, **kwargs):
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def list(self, request, *args, **kwargs):
+        cluster_id = request.query_params.get("cluster_id")
+        if not cluster_id:
+            return Response(
+                {"error": "cluster_id query parameter is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
-        """Return messages only for a specific cluster."""
-        qs = super().get_queryset()
+        """Return messages only for the cluster_id query parameter."""
         cluster_id = self.request.query_params.get("cluster_id")
-        if cluster_id:
-            qs = qs.filter(cluster_id=cluster_id)
-        return qs
+        if not cluster_id:
+            return ChatMessage.objects.none()
+        try:
+            cluster_pk = int(cluster_id)
+        except (TypeError, ValueError):
+            return ChatMessage.objects.none()
+        return super().get_queryset().filter(cluster_id=cluster_pk)
 
-    @action(detail=False, methods=['post'], url_path='send')
+    @action(detail=False, methods=['post'], url_path='send', throttle_classes=[ChatSendThrottle])
     def send_message(self, request):
         """
         Sends a user message and returns the OpenAI assistant response.
@@ -47,42 +92,49 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
 
         Example Body:
         {
-            "cluster_id": "...",
+            "cluster_id": 1,
             "content": "What is this about?"
         }
+
+        cluster_id is the numeric TopicCluster PK (same as GET /api/messages/?cluster_id=).
+        Requires authentication.
         """
         cluster_id = request.data.get("cluster_id")
         content = request.data.get("content")
 
-        if not cluster_id or not content:
+        if cluster_id is None or not content:
             return Response(
                 {"error": "cluster_id and content are required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
-            cluster = TopicCluster.objects.get(topic_id=cluster_id)
+            cluster_pk = int(cluster_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "cluster_id must be a numeric TopicCluster primary key."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            cluster = TopicCluster.objects.get(id=cluster_pk)
         except TopicCluster.DoesNotExist:
             return Response(
                 {"error": "TopicCluster not found."},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # 1. Save User Message
         user_msg = ChatMessage.objects.create(
             cluster=cluster,
             role="user",
             content=content
         )
 
-        # 2. Build Prompt using Context Builder (Task 3.2)
         builder = ChatContextBuilder()
         messages_for_api = builder.get_messages_for_api(cluster)
 
-        # 3. Call OpenAI API
-        client = get_openai_client()
-
         try:
+            client = get_openai_client()
             response = client.chat.completions.create(
                 model=settings.OPENAI_COMPATIBLE_MODEL,
                 messages=messages_for_api,
@@ -91,7 +143,6 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
             )
             assistant_content = response.choices[0].message.content
 
-            # 4. Save Assistant Message
             assistant_msg = ChatMessage.objects.create(
                 cluster=cluster,
                 role="assistant",
@@ -103,8 +154,9 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
                 "assistant_message": ChatMessageSerializer(assistant_msg).data
             }, status=status.HTTP_201_CREATED)
 
-        except Exception as e:
+        except Exception:
+            logger.exception("Chat LLM request failed for cluster %s", cluster_pk)
             return Response(
-                {"error": f"Failed to get AI response: {str(e)}"},
+                {"error": "Failed to get AI response. Please try again later."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

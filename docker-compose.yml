@@ -13,7 +13,41 @@
 #   docker compose up -d
 #   docker compose logs -f celery   # watch worker logs
 #   docker compose down -v          # stop + remove volumes
+#
+# Environment: copy config/env/dev.example to .env (default NEWSMINE_ENV=dev).
+# See docs/environments.md.
 # ===========================
+
+x-app-env: &app-env
+  env_file:
+    - .env
+  environment:
+    NEWSMINE_ENV: ${NEWSMINE_ENV:-dev}
+    DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-change-me}
+    DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+    DATABASE_NAME: ${DATABASE_NAME:-${POSTGRES_DB:-newspulse}}
+    DATABASE_USER: ${DATABASE_USER:-${POSTGRES_USER:-newsuser}}
+    DATABASE_PASSWORD: ${DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-newssecret}}
+    DATABASE_HOST: ${DATABASE_HOST:-postgres}
+    DATABASE_PORT: ${DATABASE_PORT:-5432}
+    CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+    CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+    REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
+    OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
+    OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-}
+    OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-}
+    SUMMARIZE_BATCH_SIZE: ${SUMMARIZE_BATCH_SIZE:-12}
+    SUMMARIZE_DELAY_SEC: ${SUMMARIZE_DELAY_SEC:-4}
+    BASE_URL: ${BASE_URL:-http://localhost:8000}
+    CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    EMBEDDING_MODEL_PATH: /data/embeddings-models
+    EMAIL_HOST: ${EMAIL_HOST:-localhost}
+    EMAIL_PORT: ${EMAIL_PORT:-587}
+    EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
+    EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+    EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+    DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-news@newspulse.app}
 
 services:
   postgres:
@@ -50,6 +84,7 @@ services:
       retries: 5
 
   django:
+    <<: *app-env
     build: .
     container_name: np-django
     restart: unless-stopped
@@ -59,24 +94,17 @@ services:
       --workers 2
       --threads 2
       --access-logfile -
-    environment:
-      DJANGO_DEBUG: "True"
-      DATABASE_NAME: ${POSTGRES_DB:-newspulse}
-      DATABASE_USER: ${POSTGRES_USER:-newsuser}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-newssecret}
-      DATABASE_HOST: postgres
-      DATABASE_PORT: "5432"
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      REDIS_URL: redis://redis:6379/1
-      OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-${OPENAI_API_KEY:-}}
-      OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}}
-      OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-${OPENAI_MODEL:-inclusionai/ring-2.6-1t:free}}
-      EMBEDDING_MODEL_PATH: /data/embeddings-models
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
+      - ./core:/app/core
       - ./worker:/app/worker
+      - ./articles:/app/articles
+      - ./chat:/app/chat
+      - ./digest:/app/digest
+      - ./users:/app/users
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,6 +112,7 @@ services:
         condition: service_healthy
 
   celery:
+    <<: *app-env
     build: .
     container_name: np-celery
     restart: unless-stopped
@@ -94,22 +123,13 @@ services:
       --pool=solo
       -Q celery,digest,embeddings
       --logfile=/var/log/celery/worker.log
-    environment:
-      DJANGO_DEBUG: "True"
-      DATABASE_NAME: ${POSTGRES_DB:-newspulse}
-      DATABASE_USER: ${POSTGRES_USER:-newsuser}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-newssecret}
-      DATABASE_HOST: postgres
-      DATABASE_PORT: "5432"
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      REDIS_URL: redis://redis:6379/1
-      OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-${OPENAI_API_KEY:-}}
-      OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}}
-      OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-${OPENAI_MODEL:-inclusionai/ring-2.6-1t:free}}
-      EMBEDDING_MODEL_PATH: /data/embeddings-models
     volumes:
+      - ./core:/app/core
       - ./worker:/app/worker
+      - ./articles:/app/articles
+      - ./chat:/app/chat
+      - ./digest:/app/digest
+      - ./users:/app/users
       - celery_logs:/var/log/celery
       - model_cache:/data/embeddings-models
     depends_on:
@@ -117,6 +137,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "celery -A core inspect ping --timeout=5 || exit 1"]
       interval: 30s
@@ -124,6 +146,7 @@ services:
       retries: 3
 
   celerybeat:
+    <<: *app-env
     build: .
     container_name: np-celerybeat
     restart: unless-stopped
@@ -133,26 +156,6 @@ services:
       --logfile=/var/log/celery/beat.log
       --schedule=/tmp/celerybeat-schedule
       --pidfile=/tmp/celerybeat.pid
-    environment:
-      DJANGO_DEBUG: "True"
-      DATABASE_NAME: ${POSTGRES_DB:-newspulse}
-      DATABASE_USER: ${POSTGRES_USER:-newsuser}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-newssecret}
-      DATABASE_HOST: postgres
-      DATABASE_PORT: "5432"
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      REDIS_URL: redis://redis:6379/1
-      OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-${OPENAI_API_KEY:-}}
-      OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}}
-      OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-${OPENAI_MODEL:-inclusionai/ring-2.6-1t:free}}
-      EMAIL_HOST: ${EMAIL_HOST:-localhost}
-      EMAIL_PORT: ${EMAIL_PORT:-587}
-      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
-      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
-      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
-      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-news@newspulse.app}
-      BASE_URL: ${BASE_URL:-http://localhost:8000}
     volumes:
       - celery_logs:/var/log/celery
     depends_on:
@@ -191,12 +194,16 @@ services:
     build:
       context: ../news-pulse-frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_NEWSMINE_ENV: ${NEXT_PUBLIC_NEWSMINE_ENV:-dev}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8000/api}
     container_name: np-frontend
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://django:8000/api
+      NEXT_PUBLIC_NEWSMINE_ENV: ${NEXT_PUBLIC_NEWSMINE_ENV:-dev}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8000/api}
     depends_on:
       - django
 

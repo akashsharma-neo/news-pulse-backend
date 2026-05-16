@@ -68,7 +68,11 @@ class TopicClusterSerializer(serializers.ModelSerializer):
         category_slug: Tab slug.
         published_at: Published time of the primary article.
         source_names: List of all source names in the cluster.
+        summary: AI digest, or a short excerpt from the primary article when
+            summarization has not completed yet.
     """
+
+    summary = serializers.SerializerMethodField()
 
     primary_title = serializers.CharField(
         source="primary_article.title",
@@ -106,3 +110,20 @@ class TopicClusterSerializer(serializers.ModelSerializer):
     def get_source_names(self, obj: TopicCluster) -> list[str]:
         """Return the list of source names in this cluster."""
         return obj.source_names()
+
+    def get_summary(self, obj: TopicCluster) -> str:
+        """LLM digest when present; otherwise a short preview from the primary article."""
+        if obj.summary:
+            return obj.summary
+        article = obj.primary_article
+        if not article:
+            return ""
+        if article.summary:
+            return article.summary
+        text = (article.full_text or "").strip()
+        if text:
+            words = text.split()
+            if len(words) <= 60:
+                return text
+            return " ".join(words[:60]) + "..."
+        return article.title or ""

@@ -16,14 +16,13 @@ from .serializers import TopicClusterSerializer, ArticleSerializer, TabSerialize
 
 
 def cluster_feed_queryset(tab: str | None = None):
-    """Topic clusters ready for the tab feed: digest text present, newest stories first."""
+    """Topic clusters for the tab feed, newest stories first."""
     qs = (
         TopicCluster.objects.select_related(
             "primary_article",
             "primary_article__source",
             "primary_article__source__category",
         )
-        .exclude(summary="")
         .annotate(
             story_published_at=Coalesce(
                 F("primary_article__published_at"),

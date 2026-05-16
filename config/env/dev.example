@@ -1,0 +1,39 @@
+# Copy to news-pulse-backend/.env for local development (default profile).
+# NEWSMINE_ENV=dev applies LM Studio defaults when vars below are unset.
+
+NEWSMINE_ENV=dev
+
+# LM Studio (host) — reachable from Docker via host.docker.internal
+OPENAI_COMPATIBLE_BASE_URL=http://host.docker.internal:1234/v1
+OPENAI_COMPATIBLE_MODEL=google/gemma-4-e4b
+OPENAI_COMPATIBLE_API_KEY=lm-studio
+
+# Django
+DJANGO_DEBUG=true
+DJANGO_SECRET_KEY=dev-insecure-change-me
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+BASE_URL=http://localhost:8000
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+# Summarization (local model — no OpenRouter rate limits)
+SUMMARIZE_BATCH_SIZE=50
+SUMMARIZE_DELAY_SEC=0
+
+# Postgres (docker compose defaults)
+POSTGRES_DB=newspulse
+POSTGRES_USER=newsuser
+POSTGRES_PASSWORD=newssecret
+DATABASE_NAME=newspulse
+DATABASE_USER=newsuser
+DATABASE_PASSWORD=newssecret
+DATABASE_HOST=postgres
+DATABASE_PORT=5432
+
+# Redis / Celery (docker service names)
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/0
+REDIS_URL=redis://redis:6379/1
+
+# Frontend (browser → host API)
+NEXT_PUBLIC_NEWSMINE_ENV=dev
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api

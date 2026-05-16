@@ -27,6 +27,7 @@ from articles.models import Article, Source, Tab, TopicCluster
 
 logger = get_task_logger(__name__)
 
+
 # ---------------------------------------------------------------------------
 # Scraper configuration per source
 # ---------------------------------------------------------------------------
@@ -576,13 +577,16 @@ def summarize_clusters(self) -> dict:
     """
     from django.conf import settings
 
+    summarize_batch_size = settings.SUMMARIZE_BATCH_SIZE
+    summarize_delay_sec = settings.SUMMARIZE_DELAY_SEC
+
     empty_clusters = TopicCluster.objects.filter(summary="")
     if not empty_clusters.exists():
         logger.info("No clusters need summarization")
         return {"summarized": 0, "skipped": 0}
 
     try:
-        from openai import OpenAI
+        from openai import OpenAI, RateLimitError
         client = OpenAI(
             api_key=settings.OPENAI_COMPATIBLE_API_KEY,
             base_url=settings.OPENAI_COMPATIBLE_BASE_URL,
@@ -592,10 +596,15 @@ def summarize_clusters(self) -> dict:
         logger.error("Failed to initialize OpenAI client: %s", exc)
         raise self.retry(exc=exc)
 
+    pending = empty_clusters.order_by("created_at")
+    pending_total = pending.count()
+    batch = list(pending[:summarize_batch_size])
+
     summarized = 0
     skipped = 0
+    rate_limited = False
 
-    for cluster in empty_clusters:
+    for cluster in batch:
         article = cluster.primary_article
         if not article:
             skipped += 1
@@ -619,19 +628,48 @@ def summarize_clusters(self) -> dict:
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=200,
+                max_tokens=512,
                 temperature=0.3,
             )
-            summary = response.choices[0].message.content.strip()
+            raw = response.choices[0].message.content or ""
+            summary = raw.strip()
+            if not summary:
+                logger.warning(
+                    "Empty summary for cluster %s (finish_reason=%s)",
+                    cluster.pk,
+                    response.choices[0].finish_reason,
+                )
+                skipped += 1
+                continue
             cluster.summary = summary
             cluster.save(update_fields=["summary"])
             summarized += 1
             logger.info("Summarized cluster %s: '%s'", cluster.pk, summary[:80])
+        except RateLimitError as exc:
+            logger.warning("Rate limited while summarizing cluster %s: %s", cluster.pk, exc)
+            rate_limited = True
+            skipped += 1
+            break
         except Exception as exc:
             logger.error("Failed to summarize cluster %s: %s", cluster.pk, exc)
             skipped += 1
 
-    return {"summarized": summarized, "skipped": skipped}
+        if summarize_delay_sec > 0:
+            time.sleep(summarize_delay_sec)
+
+    if rate_limited:
+        raise self.retry(countdown=60)
+
+    remaining = TopicCluster.objects.filter(summary="").count()
+    if remaining > 0 and summarized > 0:
+        summarize_clusters.delay()
+
+    return {
+        "summarized": summarized,
+        "skipped": skipped,
+        "pending": pending_total,
+        "remaining": remaining,
+    }
 
 
 # ---------------------------------------------------------------------------

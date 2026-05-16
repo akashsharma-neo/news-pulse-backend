@@ -8,7 +8,8 @@ from django.core.mail import send_mail
 from django.conf import settings
 from rest_framework import status, generics
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAdminUser
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.response import Response
 
 from .models import EmailSubscriber
@@ -26,6 +27,8 @@ class SubscribeView(generics.CreateAPIView):
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'digest_subscribe'
 
     def create(self, request, *args, **kwargs):
         serializer = SubscribeSerializer(data=request.data)
@@ -113,12 +116,12 @@ class UnsubscribeView(generics.RetrieveAPIView):
 
 
 class ResendDigestView(generics.GenericAPIView):
-    """Manually trigger a digest send (admin/development use).
+    """Manually trigger a digest send (staff only).
 
     POST /api/digest/resend/
     """
 
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
 
     def post(self, request, *args, **kwargs):
         result = generate_daily_digest_task.delay()

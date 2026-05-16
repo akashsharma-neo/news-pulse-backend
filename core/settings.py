@@ -3,13 +3,26 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
+from core.env_config import apply_profile
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+NEWSMINE_ENV = apply_profile()
+IS_PROD = NEWSMINE_ENV == 'prod'
+IS_STAGING = NEWSMINE_ENV == 'staging'
+IS_DEPLOYED = IS_PROD or IS_STAGING
+ENABLE_API_DOCS = NEWSMINE_ENV == 'dev'
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production')
 
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
+if IS_DEPLOYED:
+    DEBUG = False
 
-ALLOWED_HOSTS = ['*']
+_allowed = os.environ.get('DJANGO_ALLOWED_HOSTS', '*').strip()
+ALLOWED_HOSTS = ['*'] if _allowed == '*' else [h.strip() for h in _allowed.split(',') if h.strip()]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -21,6 +34,7 @@ INSTALLED_APPS = [
     # Third party
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'drf_spectacular',
     'corsheaders',
     # Local apps
@@ -104,11 +118,23 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.ScopedRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '120/hour',
+        'user': '2000/hour',
+        'auth': '30/hour',
+        'chat_send': '60/hour',
+        'digest_subscribe': '10/hour',
+    },
 }
 
 # JWT Settings
@@ -116,6 +142,7 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=7),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
     'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': 'Bearer',
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
 }
@@ -158,8 +185,11 @@ OPENAI_COMPATIBLE_BASE_URL = os.environ.get(
 )
 OPENAI_COMPATIBLE_MODEL = os.environ.get(
     'OPENAI_COMPATIBLE_MODEL',
-    os.environ.get('OPENAI_MODEL', 'inclusionai/ring-2.6-1t:free'),
+    os.environ.get('OPENAI_MODEL', ''),
 )
+
+SUMMARIZE_BATCH_SIZE = int(os.environ.get('SUMMARIZE_BATCH_SIZE', '12'))
+SUMMARIZE_DELAY_SEC = float(os.environ.get('SUMMARIZE_DELAY_SEC', '4'))
 
 # Legacy aliases (deprecated env names)
 OPENAI_API_KEY = OPENAI_COMPATIBLE_API_KEY
@@ -187,10 +217,12 @@ SPECTACULAR_SETTINGS = {
 SCRAPER_USER_AGENT = 'NewsPulse/1.0 (News Aggregator; +https://newspulse.app; contact@newspulse.app)'
 SCRAPER_DELAY = 1.0  # seconds between requests to same domain
 
-# CORS — allow Next.js dev server
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3000',
-]
+# CORS — comma-separated origins in CORS_ALLOWED_ORIGINS
+_cors_raw = os.environ.get(
+    'CORS_ALLOWED_ORIGINS',
+    'http://localhost:3000,http://127.0.0.1:3000',
+)
+CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_raw.split(',') if o.strip()]
 
 # ---------------------------------------------------------------------------
 # Email (SMTP)
@@ -222,3 +254,54 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': 3600,  # every hour as backup
     },
 }
+
+# ---------------------------------------------------------------------------
+# Production / staging security (HTTPS behind reverse proxy)
+# ---------------------------------------------------------------------------
+if IS_DEPLOYED:
+    SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'true').lower() in ('true', '1', 'yes')
+    SECURE_REDIRECT_EXEMPT = [r'^health/$']
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = os.environ.get('SECURE_HSTS_PRELOAD', 'false').lower() in ('true', '1', 'yes')
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = 'DENY'
+
+
+def _validate_deployed_settings() -> None:
+    """Fail fast when prod/staging is misconfigured."""
+    if not IS_DEPLOYED:
+        return
+
+    insecure_markers = ('django-insecure', 'dev-insecure', 'change-me')
+    if not SECRET_KEY or len(SECRET_KEY) < 50 or any(m in SECRET_KEY.lower() for m in insecure_markers):
+        raise ImproperlyConfigured(
+            'Set DJANGO_SECRET_KEY to a unique random string of at least 50 characters for prod/staging.'
+        )
+
+    if not ALLOWED_HOSTS or '*' in ALLOWED_HOSTS:
+        raise ImproperlyConfigured(
+            'Set DJANGO_ALLOWED_HOSTS to your API domain(s) only (no * wildcard) for prod/staging.'
+        )
+    if any(h in ('0.0.0.0', '') for h in ALLOWED_HOSTS):
+        raise ImproperlyConfigured(
+            'DJANGO_ALLOWED_HOSTS must not include 0.0.0.0 for prod/staging.'
+        )
+
+    if not CORS_ALLOWED_ORIGINS:
+        raise ImproperlyConfigured(
+            'Set CORS_ALLOWED_ORIGINS to your frontend origin(s) for prod/staging.'
+        )
+    if IS_PROD:
+        for origin in CORS_ALLOWED_ORIGINS:
+            if not origin.startswith('https://'):
+                raise ImproperlyConfigured(
+                    f'Production CORS origin must use HTTPS: {origin!r}'
+                )
+
+
+_validate_deployed_settings()

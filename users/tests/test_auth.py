@@ -317,10 +317,10 @@ class UserLogoutTest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_logout_unauthenticated(self):
-        """Logout without authentication returns 401."""
+        """Logout with a valid refresh token does not require an access token."""
         data = {"refresh": str(self.refresh)}
         response = self.client.post(self.logout_url, data, format="json")
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
 class TokenLifetimeTest(TestCase):
