@@ -128,6 +128,12 @@ class Article(models.Model):
         null=True,
         help_text="768-dim embedding vector for similarity search",
     )
+    source_image_url = models.URLField(
+        max_length=2048,
+        blank=True,
+        default="",
+        help_text="Lead image URL from the publisher (RSS media or web scrape)",
+    )
 
     class Meta:
         ordering = ["-published_at"]
@@ -164,6 +170,12 @@ class TopicCluster(models.Model):
         default=list,
         blank=True,
         help_text="List of source names contributing to this cluster",
+    )
+    image_url = models.URLField(
+        max_length=2048,
+        blank=True,
+        default="",
+        help_text="Display image URL (publisher lead image or tab placeholder)",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

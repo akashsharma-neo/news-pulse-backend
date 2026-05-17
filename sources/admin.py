@@ -6,11 +6,13 @@ of scraper settings per source.
 """
 
 from django.contrib import admin
+
+from core.admin_mixins import TotalCountChangeListMixin
 from .models import ScraperConfig
 
 
 @admin.register(ScraperConfig)
-class ScraperConfigAdmin(admin.ModelAdmin):
+class ScraperConfigAdmin(TotalCountChangeListMixin, admin.ModelAdmin):
     """Admin for scraper configuration.
 
     Features:

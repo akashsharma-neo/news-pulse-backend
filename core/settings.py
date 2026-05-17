@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'corsheaders',
     # Local apps
+    'core',
     'articles',
     'sources',
     'worker',
@@ -111,6 +112,9 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Placeholder images for stories without a publisher lead image (dev: staticfiles; prod: S3 prefix)
+PLACEHOLDER_BASE_URL = os.environ.get('PLACEHOLDER_BASE_URL', '').strip()
 
 # REST Framework
 REST_FRAMEWORK = {
@@ -245,13 +249,29 @@ BASE_URL = os.environ.get('BASE_URL', 'http://localhost:8000')
 # Celery Beat — periodic tasks
 # ---------------------------------------------------------------------------
 CELERY_BEAT_SCHEDULE = {
-    'daily-digest': {
-        'task': 'digest.tasks.generate_daily_digest_task',
-        'schedule': 86400,  # every 24 hours
+    'scrape-every-30-minutes': {
+        'task': 'worker.tasks.scrape_sources',
+        'schedule': 1800,  # 30 minutes
+    },
+    'cluster-every-hour': {
+        'task': 'worker.tasks.cluster_and_summarize',
+        'schedule': 3600,  # 1 hour safety net for unclustered articles
     },
     'summarize-clusters': {
         'task': 'worker.tasks.summarize_clusters',
         'schedule': 3600,  # every hour as backup
+    },
+    'embed-every-2-hours': {
+        'task': 'worker.tasks.generate_embeddings_task',
+        'schedule': 7200,
+    },
+    'embed-clusters-every-2-hours': {
+        'task': 'worker.tasks.generate_cluster_embeddings_task',
+        'schedule': 7200,
+    },
+    'daily-digest': {
+        'task': 'digest.tasks.generate_daily_digest_task',
+        'schedule': 86400,  # every 24 hours
     },
 }
 

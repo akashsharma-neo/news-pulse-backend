@@ -85,7 +85,7 @@ class TopicClusterViewSet(viewsets.ReadOnlyModelViewSet):
         from core.cache_utils import CacheManager
 
         tab = request.query_params.get("tab", "all")
-        cache_key = f"clusters_list_{tab}"
+        cache_key = f"clusters_list_v2_{tab}"
 
         def fetcher():
             qs = cluster_feed_queryset(

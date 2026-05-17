@@ -6,11 +6,13 @@ Registers User, UserInteraction and UserPreference in Django admin.
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+
+from core.admin_mixins import TotalCountChangeListMixin
 from .models import User, UserInteraction, UserPreference
 
 
 @admin.register(User)
-class UserAdmin(BaseUserAdmin):
+class UserAdmin(TotalCountChangeListMixin, BaseUserAdmin):
     """Admin interface for the custom User model.
 
     Uses email as the username field and supports login via
@@ -51,7 +53,7 @@ class UserAdmin(BaseUserAdmin):
 
 
 @admin.register(UserInteraction)
-class UserInteractionAdmin(admin.ModelAdmin):
+class UserInteractionAdmin(TotalCountChangeListMixin, admin.ModelAdmin):
     """Admin interface for user interaction records."""
 
     list_display = ["session_preview", "interaction_type", "cluster_title", "category", "created_at"]
@@ -75,7 +77,7 @@ class UserInteractionAdmin(admin.ModelAdmin):
 
 
 @admin.register(UserPreference)
-class UserPreferenceAdmin(admin.ModelAdmin):
+class UserPreferenceAdmin(TotalCountChangeListMixin, admin.ModelAdmin):
     """Admin interface for user preference records."""
 
     list_display = ["session_preview", "key", "value_preview", "updated_at"]

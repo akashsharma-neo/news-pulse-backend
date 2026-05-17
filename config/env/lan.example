@@ -1,7 +1,14 @@
-# Optional overrides for phone/LAN testing (merge into .env).
-# Replace YOUR_LAN_IP with: ipconfig getifaddr en0  (macOS)
+# Phone/LAN testing — merge into .env (set NEWSMINE_DEV_HOST only; compose derives URLs).
+# Also: cp docker-compose.lan.example.yml docker-compose.override.yml
+# Run: ./scripts/dev-host.sh
 
-# DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,YOUR_LAN_IP
-# BASE_URL=http://YOUR_LAN_IP:8000
-# CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://YOUR_LAN_IP:3000
-# NEXT_PUBLIC_API_URL=http://YOUR_LAN_IP:8000/api
+NEWSMINE_DEV_HOST=YourMac.local
+
+# Optional explicit overrides (use real hostname, not ${...} — env_file does not expand variables)
+# DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,YourMac.local
+# BASE_URL=http://YourMac.local:8000
+# CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://YourMac.local:3000
+# NEXT_PUBLIC_API_URL=http://YourMac.local:8000/api
+
+# news-pulse-frontend/.env.local — host only, no port (Next.js HMR)
+# ALLOWED_DEV_ORIGINS=YourMac.local

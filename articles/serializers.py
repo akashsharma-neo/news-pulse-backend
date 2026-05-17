@@ -6,6 +6,9 @@ for related objects (source name, category slug, etc.).
 """
 
 from rest_framework import serializers
+
+from articles.image_resolver import resolve_cluster_display_image
+
 from .models import Tab, Source, Article, TopicCluster
 
 
@@ -50,7 +53,7 @@ class ArticleSerializer(serializers.ModelSerializer):
         model = Article
         fields = [
             "id", "title", "url", "source_name", "category_slug",
-            "published_at", "summary",
+            "published_at", "summary", "source_image_url",
         ]
         read_only_fields = fields
 
@@ -73,6 +76,7 @@ class TopicClusterSerializer(serializers.ModelSerializer):
     """
 
     summary = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
 
     primary_title = serializers.CharField(
         source="primary_article.title",
@@ -103,9 +107,13 @@ class TopicClusterSerializer(serializers.ModelSerializer):
         fields = [
             "id", "topic_id", "primary_title", "primary_url",
             "source_name", "category_slug", "published_at",
-            "summary", "source_names", "created_at",
+            "summary", "source_names", "image_url", "created_at",
         ]
         read_only_fields = fields
+
+    def get_image_url(self, obj: TopicCluster) -> str:
+        """Resolved display image: cluster field, primary article, or placeholder."""
+        return resolve_cluster_display_image(obj)
 
     def get_source_names(self, obj: TopicCluster) -> list[str]:
         """Return the list of source names in this cluster."""

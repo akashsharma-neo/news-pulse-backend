@@ -1,0 +1,28 @@
+{% extends "admin/change_list_with_count.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+  <li>
+    <form method="post" action="{% url 'admin:articles_topiccluster_summarize_clusters' %}" style="display: inline;">
+      {% csrf_token %}
+      <button type="submit" class="button">{% translate "Summarize clusters now" %}</button>
+    </form>
+  </li>
+  {{ block.super }}
+{% endblock %}
+
+{% block content %}
+  {% if pending_summaries is not None %}
+    <div class="module" style="margin-bottom: 12px; padding: 10px 14px;">
+      <strong>{% translate "Summarization" %}</strong>
+      <p style="margin: 8px 0 0;">
+        {% if pending_summaries == 1 %}
+          {% translate "1 cluster awaiting AI summary." %}
+        {% else %}
+          {% blocktranslate %}{{ pending_summaries }} clusters awaiting AI summary.{% endblocktranslate %}
+        {% endif %}
+      </p>
+    </div>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

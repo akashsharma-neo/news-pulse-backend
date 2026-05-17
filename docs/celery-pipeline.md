@@ -192,9 +192,9 @@ Open the frontend (http://127.0.0.1:3000) — the India tab should show headline
 | Task | Module | What it does |
 |------|--------|----------------|
 | `scrape_sources` | `worker.tasks` | Loads all `Source` with `active=True`, runs a **chord**: parallel `scrape_source` per source, then `cluster_and_summarize` when all finish |
-| `scrape_source` | `worker.tasks` | Fetches one outlet (RSS via feedparser or web via BeautifulSoup), dedupes by URL, creates `Article` rows |
+| `scrape_source` | `worker.tasks` | Fetches one outlet (RSS `content:encoded` or web listing), joins listing paragraphs, optionally fetches each article URL for full body (`worker/article_content.py`), dedupes by URL, creates `Article` rows |
 | `cluster_and_summarize` | `worker.tasks` | Groups recent unclustered articles (48h window) into `TopicCluster` by tab + title/content similarity; dispatches `summarize_clusters` if new clusters were created |
-| `summarize_clusters` | `worker.tasks` | OpenAI call: fills empty `TopicCluster.summary` (~60–80 words) from primary article text |
+| `summarize_clusters` | `worker.tasks` | OpenAI call: fills empty `TopicCluster.summary` (~60–80 words, 2–3 sentences) from primary + related articles; refetches thin `full_text` when needed |
 | `generate_embeddings_task` | `worker.tasks` | Local sentence-transformers → `Article.embedding` (pgvector) |
 | `generate_cluster_embeddings_task` | `worker.tasks` | Embeds cluster text onto primary article vectors |
 | `run_full_pipeline` | `worker.tasks` | Manual: `scrape_sources` chord + embed tasks (does not double-run cluster in parallel) |

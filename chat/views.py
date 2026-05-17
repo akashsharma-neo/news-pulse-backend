@@ -138,7 +138,7 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
             response = client.chat.completions.create(
                 model=settings.OPENAI_COMPATIBLE_MODEL,
                 messages=messages_for_api,
-                max_tokens=512,
+                max_tokens=1024,
                 temperature=0.7,
             )
             assistant_content = response.choices[0].message.content

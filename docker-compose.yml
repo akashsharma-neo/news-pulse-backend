@@ -6,6 +6,7 @@
 #   celery      — Celery worker (scrapes, clusters, embeds)
 #   celerybeat  — Celery beat scheduler (scrape/cluster/embed)
 #   flower      — Celery monitoring UI (port 5555)
+#   metabase    — SQL analytics / dashboards (port 3001)
 #   redis       — Celery broker + cache
 #   postgres    — PostgreSQL 17 + pgvector
 #
@@ -23,9 +24,10 @@ x-app-env: &app-env
     - .env
   environment:
     NEWSMINE_ENV: ${NEWSMINE_ENV:-dev}
+    NEWSMINE_DEV_HOST: ${NEWSMINE_DEV_HOST:-localhost}
     DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-change-me}
-    DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+    DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0,${NEWSMINE_DEV_HOST:-localhost}}
     DATABASE_NAME: ${DATABASE_NAME:-${POSTGRES_DB:-newspulse}}
     DATABASE_USER: ${DATABASE_USER:-${POSTGRES_USER:-newsuser}}
     DATABASE_PASSWORD: ${DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-newssecret}}
@@ -39,8 +41,8 @@ x-app-env: &app-env
     OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-}
     SUMMARIZE_BATCH_SIZE: ${SUMMARIZE_BATCH_SIZE:-12}
     SUMMARIZE_DELAY_SEC: ${SUMMARIZE_DELAY_SEC:-4}
-    BASE_URL: ${BASE_URL:-http://localhost:8000}
-    CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    BASE_URL: ${BASE_URL:-http://${NEWSMINE_DEV_HOST:-localhost}:8000}
+    CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://${NEWSMINE_DEV_HOST:-localhost}:3000}
     EMBEDDING_MODEL_PATH: /data/embeddings-models
     EMAIL_HOST: ${EMAIL_HOST:-localhost}
     EMAIL_PORT: ${EMAIL_PORT:-587}
@@ -48,6 +50,16 @@ x-app-env: &app-env
     EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
     EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
     DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-news@newspulse.app}
+
+# Bind-mount all local Python apps so code + templates match the host (dev).
+x-app-code-volumes: &app-code-volumes
+  - ./core:/app/core
+  - ./worker:/app/worker
+  - ./articles:/app/articles
+  - ./sources:/app/sources
+  - ./chat:/app/chat
+  - ./digest:/app/digest
+  - ./users:/app/users
 
 services:
   postgres:
@@ -96,13 +108,7 @@ services:
       --access-logfile -
     ports:
       - "127.0.0.1:8000:8000"
-    volumes:
-      - ./core:/app/core
-      - ./worker:/app/worker
-      - ./articles:/app/articles
-      - ./chat:/app/chat
-      - ./digest:/app/digest
-      - ./users:/app/users
+    volumes: *app-code-volumes
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -127,6 +133,7 @@ services:
       - ./core:/app/core
       - ./worker:/app/worker
       - ./articles:/app/articles
+      - ./sources:/app/sources
       - ./chat:/app/chat
       - ./digest:/app/digest
       - ./users:/app/users
@@ -157,6 +164,8 @@ services:
       --schedule=/tmp/celerybeat-schedule
       --pidfile=/tmp/celerybeat.pid
     volumes:
+      - ./core:/app/core
+      - ./worker:/app/worker
       - celery_logs:/var/log/celery
     depends_on:
       celery:
@@ -190,12 +199,34 @@ services:
       - redis
       - celery
 
+  metabase:
+    image: metabase/metabase:v0.55.4
+    container_name: np-metabase
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${METABASE_PORT:-3001}:3000"
+    environment:
+      MB_ENCRYPTION_SECRET_KEY: ${METABASE_ENCRYPTION_SECRET_KEY:-dev-only-metabase-encryption-key}
+    volumes:
+      - metabase_data:/metabase-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
   frontend:
     build:
       context: ../news-pulse-frontend
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_NEWSMINE_ENV: ${NEXT_PUBLIC_NEWSMINE_ENV:-dev}
+        # Browser calls the API from the host — use 127.0.0.1 when compose binds 127.0.0.1:8000.
+        # For phone/LAN, set NEXT_PUBLIC_API_URL in .env or use docker-compose.lan.example.yml.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8000/api}
     container_name: np-frontend
     restart: unless-stopped
@@ -215,4 +246,6 @@ volumes:
   celery_logs:
     driver: local
   model_cache:
+    driver: local
+  metabase_data:
     driver: local

@@ -1,19 +1,27 @@
 # Copy to news-pulse-backend/.env for local development (default profile).
 # NEWSMINE_ENV=dev applies LM Studio defaults when vars below are unset.
+#
+# NEWSMINE_DEV_HOST drives Django BASE_URL / CORS / ALLOWED_HOSTS.
+# Frontend API URL defaults to http://127.0.0.1:8000/api in docker-compose.yml (laptop).
+# For phone/LAN, set NEWSMINE_DEV_HOST + NEXT_PUBLIC_API_URL (see config/env/lan.example).
+# Run from repo root: ./scripts/dev-host.sh
 
 NEWSMINE_ENV=dev
+
+# localhost = laptop only; YourMac.local = phone on same Wi-Fi (mDNS, stable across DHCP)
+NEWSMINE_DEV_HOST=localhost
 
 # LM Studio (host) — reachable from Docker via host.docker.internal
 OPENAI_COMPATIBLE_BASE_URL=http://host.docker.internal:1234/v1
 OPENAI_COMPATIBLE_MODEL=google/gemma-4-e4b
 OPENAI_COMPATIBLE_API_KEY=lm-studio
 
-# Django
+# Django (optional overrides — omit to use compose defaults from NEWSMINE_DEV_HOST)
 DJANGO_DEBUG=true
 DJANGO_SECRET_KEY=dev-insecure-change-me
-DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
-BASE_URL=http://localhost:8000
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+# DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,localhost
+# BASE_URL=http://localhost:8000
+# CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3000
 
 # Summarization (local model — no OpenRouter rate limits)
 SUMMARIZE_BATCH_SIZE=50
@@ -34,6 +42,6 @@ CELERY_BROKER_URL=redis://redis:6379/0
 CELERY_RESULT_BACKEND=redis://redis:6379/0
 REDIS_URL=redis://redis:6379/1
 
-# Frontend (browser → host API)
+# Frontend Docker build (optional; compose default is http://127.0.0.1:8000/api)
 NEXT_PUBLIC_NEWSMINE_ENV=dev
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api
+# NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api

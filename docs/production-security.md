@@ -80,11 +80,16 @@ curl -s -o /dev/null -w "%{http_code}" "https://api.example.com/api/docs/"
 
 ## LAN / phone testing (dev only)
 
-See [config/env/lan.example](../config/env/lan.example) and [docker-compose.lan.example.yml](../docker-compose.lan.example.yml). For Next.js on a phone, run on the host:
+1. Run `./scripts/dev-host.sh` from the workspace root and set `NEWSMINE_DEV_HOST` in `news-pulse-backend/.env` to the suggested mDNS name (e.g. `YourMac.local`), not the raw LAN IP.
+2. Mirror that host in `news-pulse-frontend/.env.local` (`NEXT_PUBLIC_API_URL`, `ALLOWED_DEV_ORIGINS`).
+3. Optional: `cp docker-compose.lan.example.yml docker-compose.override.yml` to bind ports on all interfaces.
+4. Recreate containers: `docker compose up -d --force-recreate django frontend`.
+
+For Next.js on a phone (host dev server instead of Docker UI):
 
 ```bash
 cd news-pulse-frontend
 npm run dev -- -H 0.0.0.0 -p 3000
 ```
 
-Set `ALLOWED_DEV_ORIGINS` to your Mac’s LAN IP in `.env.local`.
+Use `ALLOWED_DEV_ORIGINS=YourMac.local` (hostname only, no port). See [config/env/lan.example](../config/env/lan.example).

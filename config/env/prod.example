@@ -33,3 +33,6 @@ REDIS_URL=
 
 NEXT_PUBLIC_NEWSMINE_ENV=prod
 NEXT_PUBLIC_API_URL=
+
+# Tab placeholder images (upload articles/static/newspulse/placeholders/ to this S3 prefix)
+# PLACEHOLDER_BASE_URL=https://your-bucket.s3.region.amazonaws.com/newspulse/placeholders

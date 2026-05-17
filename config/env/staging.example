@@ -30,3 +30,6 @@ REDIS_URL=
 
 NEXT_PUBLIC_NEWSMINE_ENV=staging
 NEXT_PUBLIC_API_URL=
+
+# Tab placeholder images (optional S3 prefix; omit to use BASE_URL/static/...)
+# PLACEHOLDER_BASE_URL=

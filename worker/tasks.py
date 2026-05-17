@@ -23,9 +23,21 @@ from celery.utils.log import get_task_logger
 from django.utils import timezone as dj_timezone
 from feedparser import parse as parse_rss
 
+from articles.image_resolver import extract_rss_image, extract_web_image, pick_cluster_image
 from articles.models import Article, Source, Tab, TopicCluster
+from worker.article_content import (
+    build_summarize_prompt,
+    enrich_article_content,
+    extract_listing_content,
+    extract_rss_entry_content,
+    gather_articles_for_summary,
+    is_summary_too_short,
+    word_count,
+)
 
 logger = get_task_logger(__name__)
+
+CLUSTER_DEBOUNCE_CACHE_KEY = "np:cluster_after_scrape_scheduled"
 
 
 # ---------------------------------------------------------------------------
@@ -149,8 +161,39 @@ def _fetch_page(url: str, headers: dict = None, retries: int = 3) -> str | None:
     return None
 
 
-def _extract_web_articles(html: str, config: dict) -> list[dict]:
+def invalidate_cluster_feed_cache() -> None:
+    """Clear cached cluster list responses so the UI shows new stories."""
+    from django.core.cache import cache
+
+    try:
+        cache.delete_pattern("clusters_list_v2_*")
+    except AttributeError:
+        cache.delete("clusters_list_v2_all")
+
+
+def schedule_cluster_after_scrape(countdown: int = 90) -> bool:
+    """
+    Debounced cluster run after scrape tasks finish.
+
+    Parallel scrape_source tasks each call this; only one cluster_and_summarize
+    is queued per debounce window. Backup when the scrape chord callback does not run.
+    """
+    from django.core.cache import cache
+
+    ttl = countdown + 60
+    if not cache.add(CLUSTER_DEBOUNCE_CACHE_KEY, 1, timeout=ttl):
+        return False
+
+    cluster_and_summarize.apply_async(countdown=countdown)
+    logger.info("Scheduled cluster_and_summarize in %ss (debounced)", countdown)
+    return True
+
+
+def _extract_web_articles(html: str, config: dict, listing_url: str | None = None) -> list[dict]:
     """Extract articles from a web page using CSS selectors."""
+    from urllib.parse import urljoin
+
+    base_url = listing_url or config.get("url", "")
     soup = BeautifulSoup(html, "html.parser")
     articles = []
 
@@ -195,27 +238,21 @@ def _extract_web_articles(html: str, config: dict) -> list[dict]:
             continue
         seen_urls.add(url)
 
-        # Resolve relative URLs
+        # Resolve relative URLs against the listing page
         if url.startswith("//"):
             url = "https:" + url
-        elif url.startswith("/"):
-            url = "https://newspulse.app" + url  # placeholder base
+        elif base_url and (url.startswith("/") or not url.startswith("http")):
+            url = urljoin(base_url, url)
 
-        # Find content
-        content_el = None
-        for sel in content_selectors:
-            content_el = container.select_one(sel)
-            if content_el:
-                break
-        if not content_el:
-            content_el = container
+        source_image_url = extract_web_image(container, base_url) or ""
 
-        content = content_el.get_text(strip=True)[:2000]
+        content = extract_listing_content(container, content_selectors)
 
         articles.append({
             "title": title,
             "url": url,
             "content": content,
+            "source_image_url": source_image_url,
         })
 
     return articles
@@ -228,7 +265,7 @@ def _parse_rss_articles(html: str, source_name: str) -> list[dict]:
     for entry in feed.entries[:50]:  # cap at 50 per source
         title = entry.get("title", "").strip()
         link = entry.get("link", "").strip()
-        content = entry.get("summary", entry.get("description", "")).strip()[:2000]
+        content = extract_rss_entry_content(entry)
 
         if not title or not link:
             continue
@@ -240,11 +277,14 @@ def _parse_rss_articles(html: str, source_name: str) -> list[dict]:
         elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
             published_at = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
 
+        source_image_url = extract_rss_image(entry) or ""
+
         articles.append({
             "title": title,
             "url": link,
             "content": content,
             "published_at": published_at,
+            "source_image_url": source_image_url,
         })
 
     return articles
@@ -262,55 +302,72 @@ def scrape_source(self, source_id: int) -> dict:
     Returns dict with counts: {"fetched": N, "created": N, "skipped": N}
     """
     try:
-        source = Source.objects.get(id=source_id)
-    except Source.DoesNotExist:
-        logger.error("Source %d not found", source_id)
-        return {"fetched": 0, "created": 0, "skipped": 0}
+        try:
+            source = Source.objects.get(id=source_id)
+        except Source.DoesNotExist:
+            logger.error("Source %d not found", source_id)
+            return {"fetched": 0, "created": 0, "skipped": 0}
 
-    config = SCRAPER_CONFIGS.get(source.name, {})
-    url = config.get("url", source.url)
-    source_type = config.get("source_type", source.source_type)
+        config = SCRAPER_CONFIGS.get(source.name, {})
+        url = config.get("url", source.url)
+        source_type = config.get("source_type", source.source_type)
 
-    logger.info("Scraping source: %s (%s) — %s", source.name, source_type, url)
+        logger.info("Scraping source: %s (%s) — %s", source.name, source_type, url)
 
-    html = _fetch_page(url)
-    if not html:
-        raise self.retry(exc=Exception(f"Failed to fetch {url}"))
+        html = _fetch_page(url)
+        if not html:
+            raise self.retry(exc=Exception(f"Failed to fetch {url}"))
 
-    if source_type == "rss":
-        articles_data = _parse_rss_articles(html, source.name)
-    else:
-        articles_data = _extract_web_articles(html, config)
+        if source_type == "rss":
+            articles_data = _parse_rss_articles(html, source.name)
+        else:
+            articles_data = _extract_web_articles(html, config, listing_url=url)
 
-    fetched = len(articles_data)
-    created = 0
-    skipped = 0
+        fetched = len(articles_data)
+        created = 0
+        skipped = 0
 
-    for article_data in articles_data:
-        # Check if we already have this URL
-        if Article.objects.filter(url=article_data["url"]).exists():
-            skipped += 1
-            continue
+        max_detail_fetches = config.get("max_detail_fetches", 15)
+        detail_fetches = 0
 
-        # Normalize published_at
-        pub_at = article_data.get("published_at")
-        if pub_at is None:
-            pub_at = dj_timezone.now()
+        for article_data in articles_data:
+            if Article.objects.filter(url=article_data["url"]).exists():
+                skipped += 1
+                continue
 
-        Article.objects.create(
-            title=article_data["title"][:1000],
-            url=article_data["url"][:2048],
-            source=source,
-            full_text=article_data.get("content", ""),
-            published_at=pub_at,
+            content = article_data.get("content", "")
+            if detail_fetches < max_detail_fetches:
+                enriched = enrich_article_content(
+                    article_data["url"],
+                    content,
+                    config,
+                    _fetch_page,
+                )
+                if word_count(enriched) > word_count(content):
+                    detail_fetches += 1
+                    content = enriched
+
+            pub_at = article_data.get("published_at")
+            if pub_at is None:
+                pub_at = dj_timezone.now()
+
+            Article.objects.create(
+                title=article_data["title"][:1000],
+                url=article_data["url"][:2048],
+                source=source,
+                full_text=content,
+                published_at=pub_at,
+                source_image_url=(article_data.get("source_image_url") or "")[:2048],
+            )
+            created += 1
+
+        logger.info(
+            "Source %s done: fetched=%d created=%d skipped=%d",
+            source.name, fetched, created, skipped,
         )
-        created += 1
-
-    logger.info(
-        "Source %s done: fetched=%d created=%d skipped=%d",
-        source.name, fetched, created, skipped,
-    )
-    return {"fetched": fetched, "created": created, "skipped": skipped}
+        return {"fetched": fetched, "created": created, "skipped": skipped}
+    finally:
+        schedule_cluster_after_scrape(countdown=90)
 
 
 @shared_task
@@ -334,6 +391,9 @@ def scrape_sources() -> dict:
         group(scrape_source.s(source_id) for source_id in active_source_ids),
         cluster_and_summarize.si(),
     ).apply_async()
+
+    # Backup if chord callback is lost (e.g. broker flush); scrape_source also debounces.
+    schedule_cluster_after_scrape(countdown=180)
 
     logger.info("Dispatched scrape chord for %d sources", len(active_source_ids))
     return {"dispatched": len(active_source_ids), "chord_id": async_result.id}
@@ -523,12 +583,17 @@ def cluster_and_summarize() -> dict:
                 a.source.name for a in cluster_articles if a.source
             ))
 
+            cluster_image_url = pick_cluster_image(
+                cluster_articles, primary, cat_slug
+            )
+
             # Create TopicCluster
             TopicCluster.objects.create(
                 topic_id=uuid.uuid4(),
                 primary_article=primary,
                 summary="",  # Will be filled by summarization task (1.6)
                 sources=source_names,
+                image_url=cluster_image_url[:2048],
             )
             total_clusters += 1
             total_clustered += len(cluster_articles)
@@ -538,11 +603,10 @@ def cluster_and_summarize() -> dict:
                 cat_slug, len(cluster_articles), primary.title[:60],
             )
 
-    # Dispatch summarization task for the newly created clusters
     if total_clusters > 0:
         summarize_clusters.delay()
+        invalidate_cluster_feed_cache()
 
-    # Count leftover (singletons — articles with no similar match)
     total_leftover = len(articles) - total_clustered
 
     logger.info(
@@ -559,6 +623,49 @@ def cluster_and_summarize() -> dict:
 # ---------------------------------------------------------------------------
 # Summarization (Task 1.6)
 # ---------------------------------------------------------------------------
+
+
+def _related_articles_for_cluster(primary: Article, cluster: TopicCluster) -> list[Article]:
+    """Articles in the same tab with similar titles (same-story coverage)."""
+    from datetime import timedelta
+
+    if not primary or not primary.source or not primary.source.category_id:
+        return []
+
+    window_start = (primary.published_at or primary.fetched_at) - timedelta(hours=72)
+    candidates = (
+        Article.objects.filter(
+            source__category_id=primary.source.category_id,
+            published_at__gte=window_start,
+        )
+        .exclude(pk=primary.pk)
+        .select_related("source")
+        .order_by("-published_at")[:30]
+    )
+
+    related: list[Article] = []
+    for candidate in candidates:
+        if _title_similarity(primary.title, candidate.title) >= 0.35:
+            related.append(candidate)
+        if len(related) >= 3:
+            break
+    return related
+
+
+def _ensure_primary_article_body(article: Article, config: dict | None = None) -> str:
+    """Return full body text, fetching the article page when stored text is thin."""
+    body = (article.full_text or "").strip()
+    if word_count(body) >= 80:
+        return body
+
+    source_name = article.source.name if article.source else ""
+    cfg = config or SCRAPER_CONFIGS.get(source_name, {})
+    enriched = enrich_article_content(article.url, body, cfg, _fetch_page)
+    if word_count(enriched) > word_count(body):
+        article.full_text = enriched
+        article.save(update_fields=["full_text"])
+        return enriched
+    return body
 
 
 @shared_task(
@@ -610,33 +717,50 @@ def summarize_clusters(self) -> dict:
             skipped += 1
             continue
 
-        title = article.title or ""
-        content = article.full_text or ""
         source_name = article.source.name if article.source else "Unknown"
         url = article.url or ""
+        title = article.title or ""
 
-        prompt = (
-            f"Write a concise news summary (60-80 words) of the following article. "
-            f"Do not include any introductory phrases — start directly with the summary content.\n\n"
-            f"Title: {title}\n"
-            f"Source: {source_name}\n"
-            f"URL: {url}\n"
-            f"Content: {content[:3000]}"
+        source_cfg = SCRAPER_CONFIGS.get(source_name, {})
+        _ensure_primary_article_body(article, source_cfg)
+        related = _related_articles_for_cluster(article, cluster)
+        for related_article in related:
+            _ensure_primary_article_body(related_article, SCRAPER_CONFIGS.get(
+                related_article.source.name if related_article.source else "", {}
+            ))
+
+        source_material = gather_articles_for_summary(article, related)
+        if word_count(source_material) < 20:
+            logger.warning(
+                "Insufficient source text for cluster %s (words=%d)",
+                cluster.pk,
+                word_count(source_material),
+            )
+            skipped += 1
+            continue
+
+        prompt = build_summarize_prompt(
+            title=title,
+            source_name=source_name,
+            url=url,
+            source_material=source_material,
+            source_names=cluster.source_names(),
         )
 
         try:
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=512,
+                max_tokens=1024,
                 temperature=0.3,
             )
             raw = response.choices[0].message.content or ""
             summary = raw.strip()
-            if not summary:
+            if not summary or is_summary_too_short(summary):
                 logger.warning(
-                    "Empty summary for cluster %s (finish_reason=%s)",
+                    "Summary too short for cluster %s (words=%d, finish_reason=%s)",
                     cluster.pk,
+                    word_count(summary),
                     response.choices[0].finish_reason,
                 )
                 skipped += 1
