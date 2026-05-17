@@ -56,13 +56,21 @@ docker compose up -d --build
 
 ## Staging / production
 
-Templates have **blank** LLM and URL fields — fill them in `.env` before deploy:
+Templates default summarization to OpenRouter + `meta-llama/llama-3.1-8b-instruct`, with `EMBEDDINGS_ENABLED=false`. Set `OPENAI_COMPATIBLE_API_KEY` before deploy:
 
 ```bash
 cp config/env/staging.example .env   # or prod.example
-# edit OPENAI_COMPATIBLE_*, BASE_URL, CORS_ALLOWED_ORIGINS, DB, etc.
+# edit OPENAI_COMPATIBLE_API_KEY, BASE_URL, CORS_ALLOWED_ORIGINS, DB, etc.
 docker compose up -d --force-recreate django celery celerybeat
 ```
+
+| Variable | Staging / prod default |
+|----------|------------------------|
+| `OPENAI_COMPATIBLE_BASE_URL` | `https://openrouter.ai/api/v1` |
+| `OPENAI_COMPATIBLE_MODEL` | `meta-llama/llama-3.1-8b-instruct` |
+| `EMBEDDINGS_ENABLED` | `false` |
+| `SUMMARIZE_FETCH_FULL_BODY` | `false` |
+| `SUMMARIZE_MAX_TOKENS` | `180` |
 
 For the frontend Docker image after changing `NEXT_PUBLIC_*`:
 

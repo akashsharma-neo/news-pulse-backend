@@ -26,10 +26,12 @@ from feedparser import parse as parse_rss
 from articles.image_resolver import extract_rss_image, extract_web_image, pick_cluster_image
 from articles.models import Article, Source, Tab, TopicCluster
 from worker.article_content import (
+    MIN_BODY_WORDS,
     build_summarize_prompt,
     enrich_article_content,
     extract_listing_content,
     extract_rss_entry_content,
+    fallback_summary_from_article,
     gather_articles_for_summary,
     is_summary_too_short,
     word_count,
@@ -625,7 +627,11 @@ def cluster_and_summarize() -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _related_articles_for_cluster(primary: Article, cluster: TopicCluster) -> list[Article]:
+def _related_articles_for_cluster(
+    primary: Article,
+    cluster: TopicCluster,
+    max_related: int = 1,
+) -> list[Article]:
     """Articles in the same tab with similar titles (same-story coverage)."""
     from datetime import timedelta
 
@@ -647,7 +653,7 @@ def _related_articles_for_cluster(primary: Article, cluster: TopicCluster) -> li
     for candidate in candidates:
         if _title_similarity(primary.title, candidate.title) >= 0.35:
             related.append(candidate)
-        if len(related) >= 3:
+        if len(related) >= max_related:
             break
     return related
 
@@ -686,6 +692,8 @@ def summarize_clusters(self) -> dict:
 
     summarize_batch_size = settings.SUMMARIZE_BATCH_SIZE
     summarize_delay_sec = settings.SUMMARIZE_DELAY_SEC
+    summarize_max_tokens = settings.SUMMARIZE_MAX_TOKENS
+    fetch_full_body = settings.SUMMARIZE_FETCH_FULL_BODY
 
     empty_clusters = TopicCluster.objects.filter(summary="")
     if not empty_clusters.exists():
@@ -720,16 +728,34 @@ def summarize_clusters(self) -> dict:
         source_name = article.source.name if article.source else "Unknown"
         url = article.url or ""
         title = article.title or ""
+        source_names = cluster.source_names()
+
+        if len(source_names) <= 1 and word_count((article.full_text or "").strip()) >= MIN_BODY_WORDS:
+            cluster.summary = fallback_summary_from_article(article)
+            cluster.save(update_fields=["summary"])
+            summarized += 1
+            logger.info(
+                "Excerpt summary for cluster %s (single-source, no LLM)",
+                cluster.pk,
+            )
+            continue
 
         source_cfg = SCRAPER_CONFIGS.get(source_name, {})
-        _ensure_primary_article_body(article, source_cfg)
-        related = _related_articles_for_cluster(article, cluster)
-        for related_article in related:
-            _ensure_primary_article_body(related_article, SCRAPER_CONFIGS.get(
-                related_article.source.name if related_article.source else "", {}
-            ))
+        if fetch_full_body or word_count((article.full_text or "").strip()) < 20:
+            _ensure_primary_article_body(article, source_cfg)
 
-        source_material = gather_articles_for_summary(article, related)
+        related: list[Article] = []
+        if len(source_names) > 1:
+            related = _related_articles_for_cluster(article, cluster, max_related=1)
+            if fetch_full_body:
+                for related_article in related:
+                    related_cfg = SCRAPER_CONFIGS.get(
+                        related_article.source.name if related_article.source else "",
+                        {},
+                    )
+                    _ensure_primary_article_body(related_article, related_cfg)
+
+        source_material = gather_articles_for_summary(article, related, source_names)
         if word_count(source_material) < 20:
             logger.warning(
                 "Insufficient source text for cluster %s (words=%d)",
@@ -744,14 +770,14 @@ def summarize_clusters(self) -> dict:
             source_name=source_name,
             url=url,
             source_material=source_material,
-            source_names=cluster.source_names(),
+            source_names=source_names,
         )
 
         try:
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=1024,
+                max_tokens=summarize_max_tokens,
                 temperature=0.3,
             )
             raw = response.choices[0].message.content or ""
@@ -830,6 +856,12 @@ def generate_embeddings_task(
         Dict with counts:
         ``{"generated": N, "skipped_empty": N, "updated": N}``
     """
+    from django.conf import settings
+
+    if not settings.EMBEDDINGS_ENABLED:
+        logger.info("Embeddings disabled (EMBEDDINGS_ENABLED=false); skipping")
+        return {"generated": 0, "skipped_empty": 0, "updated": 0, "disabled": True}
+
     try:
         from worker.embeddings import generate_embeddings
 
@@ -869,6 +901,12 @@ def generate_cluster_embeddings_task(
         Dict with counts:
         ``{"generated": N, "updated": N}``
     """
+    from django.conf import settings
+
+    if not settings.EMBEDDINGS_ENABLED:
+        logger.info("Embeddings disabled (EMBEDDINGS_ENABLED=false); skipping")
+        return {"generated": 0, "updated": 0, "disabled": True}
+
     try:
         from worker.embeddings import generate_cluster_embeddings
 
@@ -895,17 +933,29 @@ def run_full_pipeline() -> dict:
 
     Returns a summary of dispatched tasks.
     """
-    scrape_result = scrape_sources.delay()
-    embed_result = generate_embeddings_task.delay()
-    cluster_embed_result = generate_cluster_embeddings_task.delay()
+    from django.conf import settings
 
-    logger.info(
-        "Full pipeline dispatched: scrape_chord=%s embed=%s cluster_embed=%s",
-        scrape_result.id, embed_result.id, cluster_embed_result.id,
-    )
-    return {
+    scrape_result = scrape_sources.delay()
+    result = {
         "scrape_chord_id": scrape_result.id,
         "summarize_task": "auto-dispatched by cluster_and_summarize via scrape chord",
-        "embed_task_id": embed_result.id,
-        "cluster_embed_task_id": cluster_embed_result.id,
     }
+
+    if settings.EMBEDDINGS_ENABLED:
+        embed_result = generate_embeddings_task.delay()
+        cluster_embed_result = generate_cluster_embeddings_task.delay()
+        result["embed_task_id"] = embed_result.id
+        result["cluster_embed_task_id"] = cluster_embed_result.id
+        logger.info(
+            "Full pipeline dispatched: scrape_chord=%s embed=%s cluster_embed=%s",
+            scrape_result.id,
+            embed_result.id,
+            cluster_embed_result.id,
+        )
+    else:
+        logger.info(
+            "Full pipeline dispatched: scrape_chord=%s (embeddings disabled)",
+            scrape_result.id,
+        )
+
+    return result

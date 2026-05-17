@@ -119,7 +119,10 @@ Set in `news-pulse-backend/.env` (Compose reads this file for `${…}` substitut
 |----------|---------|
 | `OPENAI_COMPATIBLE_API_KEY` | **Required.** Your OpenRouter (or OpenAI) API key |
 | `OPENAI_COMPATIBLE_BASE_URL` | API base URL (default `https://openrouter.ai/api/v1`) |
-| `OPENAI_COMPATIBLE_MODEL` | Model id on that gateway (e.g. `inclusionai/ring-2.6-1t:free`) |
+| `OPENAI_COMPATIBLE_MODEL` | Model id on that gateway (prod default: `meta-llama/llama-3.1-8b-instruct`) |
+| `SUMMARIZE_MAX_TOKENS` | Max completion tokens per summary (default `180`) |
+| `SUMMARIZE_FETCH_FULL_BODY` | Fetch article pages when RSS text is thin (default `false` in prod) |
+| `EMBEDDINGS_ENABLED` | Run local embedding jobs (default `false`; saves worker RAM) |
 
 **Legacy names** (still work via fallback in `core/settings.py` and Compose): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`.
 
@@ -128,7 +131,10 @@ Example `.env` for OpenRouter:
 ```bash
 OPENAI_COMPATIBLE_API_KEY=sk-or-v1-your-key-here
 OPENAI_COMPATIBLE_BASE_URL=https://openrouter.ai/api/v1
-OPENAI_COMPATIBLE_MODEL=inclusionai/ring-2.6-1t:free
+OPENAI_COMPATIBLE_MODEL=meta-llama/llama-3.1-8b-instruct
+EMBEDDINGS_ENABLED=false
+SUMMARIZE_FETCH_FULL_BODY=false
+SUMMARIZE_MAX_TOKENS=180
 ```
 
 Check whether a key is set **without printing it**:
@@ -194,10 +200,10 @@ Open the frontend (http://127.0.0.1:3000) — the India tab should show headline
 | `scrape_sources` | `worker.tasks` | Loads all `Source` with `active=True`, runs a **chord**: parallel `scrape_source` per source, then `cluster_and_summarize` when all finish |
 | `scrape_source` | `worker.tasks` | Fetches one outlet (RSS `content:encoded` or web listing), joins listing paragraphs, optionally fetches each article URL for full body (`worker/article_content.py`), dedupes by URL, creates `Article` rows |
 | `cluster_and_summarize` | `worker.tasks` | Groups recent unclustered articles (48h window) into `TopicCluster` by tab + title/content similarity; dispatches `summarize_clusters` if new clusters were created |
-| `summarize_clusters` | `worker.tasks` | OpenAI call: fills empty `TopicCluster.summary` (~60–80 words, 2–3 sentences) from primary + related articles; refetches thin `full_text` when needed |
-| `generate_embeddings_task` | `worker.tasks` | Local sentence-transformers → `Article.embedding` (pgvector) |
-| `generate_cluster_embeddings_task` | `worker.tasks` | Embeds cluster text onto primary article vectors |
-| `run_full_pipeline` | `worker.tasks` | Manual: `scrape_sources` chord + embed tasks (does not double-run cluster in parallel) |
+| `summarize_clusters` | `worker.tasks` | OpenRouter LLM (`meta-llama/llama-3.1-8b-instruct` in prod): fills empty `TopicCluster.summary` (~60–80 words). Single-source clusters with ≥80 words of body use an excerpt (no API call). Multi-source clusters send up to one related article in the prompt. |
+| `generate_embeddings_task` | `worker.tasks` | Local sentence-transformers → `Article.embedding` (only when `EMBEDDINGS_ENABLED=true`) |
+| `generate_cluster_embeddings_task` | `worker.tasks` | Embeds cluster text onto primary article vectors (only when `EMBEDDINGS_ENABLED=true`) |
+| `run_full_pipeline` | `worker.tasks` | Manual: `scrape_sources` chord; embed tasks only if `EMBEDDINGS_ENABLED=true` |
 | `generate_daily_digest_task` | `digest.tasks` | Email digest from recent clusters to subscribers |
 
 **Scraper overrides:** For some source names, `worker.tasks.SCRAPER_CONFIGS` overrides URL and `source_type` from the DB (see seed command comments).
@@ -214,19 +220,19 @@ Defined in `core/celery.py` (merged with `CELERY_BEAT_SCHEDULE` in `core/setting
 | `scrape-every-30-minutes` | `scrape_sources` | 30 minutes |
 | `cluster-every-hour` | `cluster_and_summarize` | 1 hour (safety net) |
 | `summarize-clusters` | `summarize_clusters` | 1 hour (backup) |
-| `embed-every-2-hours` | `generate_embeddings_task` | 2 hours |
-| `embed-clusters-every-2-hours` | `generate_cluster_embeddings_task` | 2 hours |
+| `embed-every-2-hours` | `generate_embeddings_task` | 2 hours (only if `EMBEDDINGS_ENABLED=true`) |
+| `embed-clusters-every-2-hours` | `generate_cluster_embeddings_task` | 2 hours (only if `EMBEDDINGS_ENABLED=true`) |
 | `daily-digest` | `generate_daily_digest_task` | 24 hours |
 
 ---
 
 ## Worker queues
 
-The worker command uses `-Q celery,digest,embeddings` so:
+The default worker uses `-Q celery,digest` (no `embeddings` queue — keeps PyTorch off the main worker).
 
 - **celery** — scrape, cluster, summarize (time-sensitive)
 - **digest** — daily email digest
-- **embeddings** — heavy local model jobs (`CELERY_TASK_ROUTES` in `core/settings.py`)
+- **embeddings** — optional; start `docker compose --profile embeddings up celery-embeddings` with `EMBEDDINGS_ENABLED=true` on that service (`CELERY_TASK_ROUTES` in `core/settings.py`)
 
 Embedding work should not block scrapes on the default queue.
 

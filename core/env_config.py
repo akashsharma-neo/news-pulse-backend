@@ -26,9 +26,21 @@ PROFILES: dict[str, dict[str, str]] = {
         "DJANGO_ALLOWED_HOSTS": "localhost,127.0.0.1,0.0.0.0",
         "SUMMARIZE_BATCH_SIZE": "50",
         "SUMMARIZE_DELAY_SEC": "0",
+        "SUMMARIZE_FETCH_FULL_BODY": "true",
+        "EMBEDDINGS_ENABLED": "false",
     },
-    "staging": {},
-    "prod": {},
+    "staging": {
+        "OPENAI_COMPATIBLE_BASE_URL": "https://openrouter.ai/api/v1",
+        "OPENAI_COMPATIBLE_MODEL": "meta-llama/llama-3.1-8b-instruct",
+        "EMBEDDINGS_ENABLED": "false",
+        "SUMMARIZE_FETCH_FULL_BODY": "false",
+    },
+    "prod": {
+        "OPENAI_COMPATIBLE_BASE_URL": "https://openrouter.ai/api/v1",
+        "OPENAI_COMPATIBLE_MODEL": "meta-llama/llama-3.1-8b-instruct",
+        "EMBEDDINGS_ENABLED": "false",
+        "SUMMARIZE_FETCH_FULL_BODY": "false",
+    },
 }
 
 

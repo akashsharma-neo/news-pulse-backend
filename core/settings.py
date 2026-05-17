@@ -194,6 +194,14 @@ OPENAI_COMPATIBLE_MODEL = os.environ.get(
 
 SUMMARIZE_BATCH_SIZE = int(os.environ.get('SUMMARIZE_BATCH_SIZE', '12'))
 SUMMARIZE_DELAY_SEC = float(os.environ.get('SUMMARIZE_DELAY_SEC', '4'))
+SUMMARIZE_MAX_TOKENS = int(os.environ.get('SUMMARIZE_MAX_TOKENS', '180'))
+SUMMARIZE_FETCH_FULL_BODY = os.environ.get(
+    'SUMMARIZE_FETCH_FULL_BODY', 'false'
+).lower() in ('true', '1', 'yes')
+
+EMBEDDINGS_ENABLED = os.environ.get('EMBEDDINGS_ENABLED', 'false').lower() in (
+    'true', '1', 'yes'
+)
 
 # Legacy aliases (deprecated env names)
 OPENAI_API_KEY = OPENAI_COMPATIBLE_API_KEY
@@ -261,19 +269,21 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'worker.tasks.summarize_clusters',
         'schedule': 3600,  # every hour as backup
     },
-    'embed-every-2-hours': {
-        'task': 'worker.tasks.generate_embeddings_task',
-        'schedule': 7200,
-    },
-    'embed-clusters-every-2-hours': {
-        'task': 'worker.tasks.generate_cluster_embeddings_task',
-        'schedule': 7200,
-    },
     'daily-digest': {
         'task': 'digest.tasks.generate_daily_digest_task',
         'schedule': 86400,  # every 24 hours
     },
 }
+
+if EMBEDDINGS_ENABLED:
+    CELERY_BEAT_SCHEDULE['embed-every-2-hours'] = {
+        'task': 'worker.tasks.generate_embeddings_task',
+        'schedule': 7200,
+    }
+    CELERY_BEAT_SCHEDULE['embed-clusters-every-2-hours'] = {
+        'task': 'worker.tasks.generate_cluster_embeddings_task',
+        'schedule': 7200,
+    }
 
 # ---------------------------------------------------------------------------
 # Production / staging security (HTTPS behind reverse proxy)

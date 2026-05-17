@@ -105,7 +105,8 @@ Base reference: [docker-compose.yml](../docker-compose.yml) (dev). Production ne
 ### EC2
 
 - **Type:** `t4g.medium` (2 vCPU, 4 GiB), e.g. `us-east-1` ≈ $24/mo on-demand
-- **Avoid:** `t4g.small` (2 GiB) — likely OOM during embedding jobs
+- **With `EMBEDDINGS_ENABLED=false` (default):** `t4g.small` (2 GiB) can run scrape + cluster + summarize; embeddings are off the main worker.
+- **With embeddings:** use `t4g.medium` (4 GiB) or run `celery-embeddings` on a separate instance/profile.
 - **Disk:** 30–40 GiB gp3 root (Postgres + `model_cache` for Hugging Face model)
 - **Elastic IP:** stable DNS target (small charge if instance is stopped)
 
@@ -216,7 +217,7 @@ Full checklist: [production-security.md](production-security.md).
 
 ## Operational notes
 
-1. **Embeddings:** first run downloads the sentence-transformers model into the `model_cache` volume (`EMBEDDING_MODEL_PATH=/data/embeddings-models`). Expect a slow first embed job; avoid multiple Celery workers on 4 GiB RAM.
+1. **Embeddings (optional):** disabled by default (`EMBEDDINGS_ENABLED=false`). To backfill vectors, set `EMBEDDINGS_ENABLED=true` and start the compose profile: `docker compose --profile embeddings up -d celery-embeddings`. First run downloads the model into `model_cache` (`EMBEDDING_MODEL_PATH=/data/embeddings-models`); avoid multiple embed workers on 4 GiB RAM.
 2. **Celery beat:** run a single `celerybeat` container.
 3. **Post-deploy checks:** Swagger 404, CORS preflight, `/health/`, no public Postgres/Redis — see [production-security.md](production-security.md).
 4. **Backups:** daily `pg_dump` to S3 via cron, or weekly EBS snapshots; retain ~7 days and test a restore once.

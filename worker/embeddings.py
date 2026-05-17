@@ -29,7 +29,6 @@ from typing import Iterator
 
 import numpy as np
 from django.db import transaction
-from sentence_transformers import SentenceTransformer
 from tqdm.auto import tqdm
 
 from articles.models import Article
@@ -40,14 +39,14 @@ logger = logging.getLogger(__name__)
 # Model cache (singleton across calls)
 # ---------------------------------------------------------------------------
 
-_MODEL_CACHE: dict[str, SentenceTransformer] = {}
+_MODEL_CACHE: dict[str, object] = {}
 _MODEL_PATH = Path(os.environ.get(
     "EMBEDDING_MODEL_PATH",
     str(Path.home() / ".cache" / "huggingface" / "sentence-transformers"),
 ))
 
 
-def _get_model(model_name: str = "all-mpnet-base-v2") -> SentenceTransformer:
+def _get_model(model_name: str = "all-mpnet-base-v2"):
     """Load (or return cached) a sentence-transformers model.
 
     Args:
@@ -57,6 +56,8 @@ def _get_model(model_name: str = "all-mpnet-base-v2") -> SentenceTransformer:
         A ``SentenceTransformer`` instance ready for inference.
     """
     if model_name not in _MODEL_CACHE:
+        from sentence_transformers import SentenceTransformer
+
         logger.info("Loading embedding model '%s' …", model_name)
         _MODEL_CACHE[model_name] = SentenceTransformer(model_name)
     return _MODEL_CACHE[model_name]

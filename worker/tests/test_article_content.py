@@ -6,10 +6,13 @@ from django.test import SimpleTestCase
 from bs4 import BeautifulSoup
 
 from worker.article_content import (
+    MAX_SUMMARY_SOURCE_CHARS,
     build_summarize_prompt,
     enrich_article_content,
     extract_listing_content,
     extract_rss_entry_content,
+    fallback_summary_from_article,
+    gather_articles_for_summary,
     html_to_plain_text,
     is_summary_too_short,
     word_count,
@@ -82,3 +85,37 @@ class ArticleContentTests(SimpleTestCase):
                 " ".join(["word"] * 45)
             )
         )
+
+    def test_fallback_summary_truncates_long_body(self):
+        article = MagicMock()
+        article.summary = ""
+        article.title = "Headline"
+        article.full_text = " ".join(["word"] * 100)
+        summary = fallback_summary_from_article(article)
+        self.assertEqual(word_count(summary), 60)
+        self.assertTrue(summary.endswith("..."))
+
+    def test_gather_articles_skips_related_for_single_source(self):
+        primary = MagicMock()
+        primary.title = "Story"
+        primary.full_text = "Body " * 50
+        primary.source.name = "BBC"
+        related = [MagicMock()]
+        material = gather_articles_for_summary(primary, related, source_names=["BBC"])
+        self.assertNotIn("Related", material)
+        self.assertLessEqual(len(material), MAX_SUMMARY_SOURCE_CHARS)
+
+    def test_gather_articles_includes_one_related_for_multi_source(self):
+        primary = MagicMock()
+        primary.title = "Story"
+        primary.full_text = "Body"
+        primary.source.name = "BBC"
+        related = MagicMock()
+        related.title = "Same story"
+        related.full_text = "Other angle"
+        related.source.name = "CNN"
+        material = gather_articles_for_summary(
+            primary, [related], source_names=["BBC", "CNN"]
+        )
+        self.assertIn("Related 1", material)
+        self.assertIn("CNN", material)

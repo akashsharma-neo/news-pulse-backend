@@ -3,8 +3,9 @@
 # ===========================
 # Services:
 #   django      — Gunicorn web server (port 8000)
-#   celery      — Celery worker (scrapes, clusters, embeds)
-#   celerybeat  — Celery beat scheduler (scrape/cluster/embed)
+#   celery      — Celery worker (scrapes, clusters, summarizes)
+#   celerybeat  — Celery beat scheduler (scrape/cluster/summarize)
+#   celery-embeddings — optional profile; local embeddings (EMBEDDINGS_ENABLED=true)
 #   flower      — Celery monitoring UI (port 5555)
 #   metabase    — SQL analytics / dashboards (port 3001)
 #   redis       — Celery broker + cache
@@ -37,10 +38,13 @@ x-app-env: &app-env
     CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
     REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
     OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
-    OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-}
-    OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-}
+    OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-https://openrouter.ai/api/v1}
+    OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-meta-llama/llama-3.1-8b-instruct}
     SUMMARIZE_BATCH_SIZE: ${SUMMARIZE_BATCH_SIZE:-12}
     SUMMARIZE_DELAY_SEC: ${SUMMARIZE_DELAY_SEC:-4}
+    SUMMARIZE_MAX_TOKENS: ${SUMMARIZE_MAX_TOKENS:-180}
+    SUMMARIZE_FETCH_FULL_BODY: ${SUMMARIZE_FETCH_FULL_BODY:-false}
+    EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
     BASE_URL: ${BASE_URL:-http://${NEWSMINE_DEV_HOST:-localhost}:8000}
     CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://${NEWSMINE_DEV_HOST:-localhost}:3000}
     EMBEDDING_MODEL_PATH: /data/embeddings-models
@@ -127,7 +131,7 @@ services:
       --loglevel=info
       --concurrency=4
       --pool=solo
-      -Q celery,digest,embeddings
+      -Q celery,digest
       --logfile=/var/log/celery/worker.log
     volumes:
       - ./core:/app/core
@@ -151,6 +155,33 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  celery-embeddings:
+    <<: *app-env
+    profiles: [embeddings]
+    build: .
+    container_name: np-celery-embeddings
+    restart: unless-stopped
+    command: >
+      celery -A core worker
+      --loglevel=info
+      --concurrency=1
+      --pool=solo
+      -Q embeddings
+      --logfile=/var/log/celery/embeddings.log
+    environment:
+      EMBEDDINGS_ENABLED: "true"
+    volumes:
+      - ./core:/app/core
+      - ./worker:/app/worker
+      - ./articles:/app/articles
+      - celery_logs:/var/log/celery
+      - model_cache:/data/embeddings-models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   celerybeat:
     <<: *app-env

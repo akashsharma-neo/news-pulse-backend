@@ -14,7 +14,8 @@ from bs4 import BeautifulSoup
 
 MIN_BODY_WORDS = 80
 MAX_BODY_CHARS = 8000
-MAX_SUMMARY_SOURCE_CHARS = 6000
+MAX_SUMMARY_SOURCE_CHARS = 2500
+MAX_SUMMARY_ARTICLE_CHARS = 1000
 
 
 def word_count(text: str) -> int:
@@ -149,9 +150,30 @@ def enrich_article_content(
     return content[:MAX_BODY_CHARS]
 
 
-def gather_articles_for_summary(primary, related_articles: list) -> str:
+def fallback_summary_from_article(article) -> str:
+    """Short excerpt from article text when LLM summarization is skipped."""
+    if not article:
+        return "Summary pending."
+    if article.summary:
+        return article.summary
+    text = (article.full_text or "").strip()
+    if text:
+        words = text.split()
+        if len(words) <= 60:
+            return text
+        return " ".join(words[:60]) + "..."
+    return article.title or "Summary pending."
+
+
+def gather_articles_for_summary(
+    primary,
+    related_articles: list,
+    source_names: list[str] | None = None,
+) -> str:
     """Build source material for cluster summarization from primary + related articles."""
     blocks: list[str] = []
+    names = source_names or []
+    max_related = 1 if len(names) > 1 else 0
 
     def add_block(article, label: str) -> None:
         title = (article.title or "").strip()
@@ -162,11 +184,11 @@ def gather_articles_for_summary(primary, related_articles: list) -> str:
         if not title and not body:
             return
         blocks.append(
-            f"[{label} — {source}]\nTitle: {title}\n{body[:2500]}"
+            f"[{label} — {source}]\nTitle: {title}\n{body[:MAX_SUMMARY_ARTICLE_CHARS]}"
         )
 
     add_block(primary, "Primary")
-    for idx, article in enumerate(related_articles[:3], start=1):
+    for idx, article in enumerate(related_articles[:max_related], start=1):
         add_block(article, f"Related {idx}")
 
     combined = "\n\n".join(blocks)

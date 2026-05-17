@@ -4,22 +4,8 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
-from articles.models import Article, TopicCluster
-
-
-def _fallback_summary(article: Article | None) -> str:
-    """Same preview logic as TopicClusterSerializer.get_summary (no LLM)."""
-    if not article:
-        return "Summary pending."
-    if article.summary:
-        return article.summary
-    text = (article.full_text or "").strip()
-    if text:
-        words = text.split()
-        if len(words) <= 60:
-            return text
-        return " ".join(words[:60]) + "..."
-    return article.title or "Summary pending."
+from articles.models import TopicCluster
+from worker.article_content import fallback_summary_from_article
 
 
 class Command(BaseCommand):
@@ -43,7 +29,7 @@ class Command(BaseCommand):
 
         updated = 0
         for cluster in qs.iterator():
-            summary = _fallback_summary(cluster.primary_article)
+            summary = fallback_summary_from_article(cluster.primary_article)
             if dry_run:
                 updated += 1
                 continue

@@ -16,6 +16,8 @@ app.autodiscover_tasks()
 
 # Merge beat schedule: Django `CELERY_BEAT_SCHEDULE` is loaded above; add/override
 # worker periodic tasks here so digest/settings entries are not dropped.
+from django.conf import settings
+
 _beat = dict(app.conf.beat_schedule or {})
 _beat.update(
     {
@@ -27,16 +29,21 @@ _beat.update(
             'task': 'worker.tasks.cluster_and_summarize',
             'schedule': timedelta(hours=1),
         },
-        'embed-every-2-hours': {
-            'task': 'worker.tasks.generate_embeddings_task',
-            'schedule': timedelta(hours=2),
-        },
-        'embed-clusters-every-2-hours': {
-            'task': 'worker.tasks.generate_cluster_embeddings_task',
-            'schedule': timedelta(hours=2),
-        },
     }
 )
+if getattr(settings, 'EMBEDDINGS_ENABLED', False):
+    _beat.update(
+        {
+            'embed-every-2-hours': {
+                'task': 'worker.tasks.generate_embeddings_task',
+                'schedule': timedelta(hours=2),
+            },
+            'embed-clusters-every-2-hours': {
+                'task': 'worker.tasks.generate_cluster_embeddings_task',
+                'schedule': timedelta(hours=2),
+            },
+        }
+    )
 app.conf.beat_schedule = _beat
 
 app.conf.timezone = 'Asia/Kolkata'
