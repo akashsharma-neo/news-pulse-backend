@@ -68,6 +68,38 @@ class ExtractWebImageTests(SimpleTestCase):
         url = extract_web_image(container, "https://news.example.com/india/")
         self.assertEqual(url, "https://news.example.com/photos/1.jpg")
 
+    def test_no_image_returns_none(self):
+        from bs4 import BeautifulSoup
+
+        html = '<div class="card"><h2>No image here</h2></div>'
+        container = BeautifulSoup(html, "html.parser").select_one("div")
+        url = extract_web_image(container, "https://news.example.com/")
+        self.assertIsNone(url)
+
+    def test_empty_container_returns_none(self):
+        from bs4 import BeautifulSoup
+
+        html = ""
+        container = BeautifulSoup(html, "html.parser")
+        url = extract_web_image(container, "https://news.example.com/")
+        self.assertIsNone(url)
+
+    def test_rejects_http_image_url(self):
+        from bs4 import BeautifulSoup
+
+        html = '<div class="card"><img src="http://cdn.example.com/pic.jpg" /></div>'
+        container = BeautifulSoup(html, "html.parser").select_one("div")
+        url = extract_web_image(container, "https://news.example.com/")
+        self.assertIsNone(url)
+
+    def test_absorbs_absolute_url(self):
+        from bs4 import BeautifulSoup
+
+        html = '<div class="card"><img src="https://cdn.example.com/pic.jpg" /></div>'
+        container = BeautifulSoup(html, "html.parser").select_one("div")
+        url = extract_web_image(container, "https://news.example.com/")
+        self.assertEqual(url, "https://cdn.example.com/pic.jpg")
+
 
 class PickClusterImageTests(TestCase):
     def setUp(self):
@@ -145,6 +177,21 @@ class ResolveClusterDisplayImageTests(TestCase):
             resolve_cluster_display_image(cluster),
             "https://cdn.example.com/cluster.jpg",
         )
+
+    @override_settings(BASE_URL="http://localhost:8000", PLACEHOLDER_BASE_URL="")
+    def test_no_image_on_article_falls_back_to_placeholder(self):
+        article_no_img = Article.objects.create(
+            title="No Image", url="https://example.com/noimg",
+            source=self.source, source_image_url="",
+        )
+        cluster = TopicCluster.objects.create(
+            topic_id="00000000-0000-0000-0000-000000000003",
+            primary_article=article_no_img,
+            summary="Text",
+            image_url="",
+        )
+        url = resolve_cluster_display_image(cluster)
+        self.assertIn("global", url)
 
 
 class TopicClusterSerializerImageTests(TestCase):

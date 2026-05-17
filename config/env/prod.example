@@ -38,5 +38,15 @@ REDIS_URL=
 NEXT_PUBLIC_NEWSMINE_ENV=prod
 NEXT_PUBLIC_API_URL=
 
+# Amazon SES SMTP (see deploy/cloudflare-ses.md)
+# EMAIL_HOST=email-smtp.ap-south-1.amazonaws.com
+# EMAIL_PORT=587
+# EMAIL_USE_TLS=True
+# EMAIL_HOST_USER=
+# EMAIL_HOST_PASSWORD=
+# DEFAULT_FROM_EMAIL=news@yourdomain.com
+
 # Tab placeholder images (upload articles/static/newspulse/placeholders/ to this S3 prefix)
 # PLACEHOLDER_BASE_URL=https://your-bucket.s3.region.amazonaws.com/newspulse/placeholders
+
+# Deploy overlay (EC2): see config/env/prod.deploy.example

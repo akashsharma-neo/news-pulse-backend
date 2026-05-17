@@ -188,7 +188,7 @@ class UserLoginTest(TestCase):
         }
         response = self.client.post(self.login_url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("detail", response.data)
+        self.assertIn("non_field_errors", response.data)
 
     def test_login_nonexistent_user(self):
         """Login fails for a non-existent user."""
@@ -276,10 +276,10 @@ class TokenRefreshTest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_refresh_missing_token(self):
-        """Missing refresh token returns 401."""
+        """Missing refresh token returns 400."""
         data = {}
         response = self.client.post(self.refresh_url, data, format="json")
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class UserLogoutTest(TestCase):

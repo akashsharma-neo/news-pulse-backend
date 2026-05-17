@@ -1,8 +1,8 @@
 # AWS deployment (first ~100 users)
 
-Infrastructure plan for running NewsPulse in production on AWS at low cost. Target: **~$28–35/month** (excluding LLM API usage).
+Infrastructure plan for running NewsPulse in production on AWS at low cost. Target: **~$16–20/month** on `t4g.small` (excluding LLM API usage).
 
-**Approach:** one **`t4g.medium` EC2** instance running **Docker Compose (prod)** + **ECR** for images + **TLS reverse proxy** (Cloudflare or Caddy). Skip EKS, ALB, RDS, and ElastiCache until you outgrow this box.
+**Approach:** one **`t4g.small` EC2** instance (ARM) running **Docker Compose (prod)** + **ECR** for images + **TLS reverse proxy** (Cloudflare or Caddy). Skip EKS, ALB, RDS, and ElastiCache until you outgrow this box.
 
 Related docs:
 
@@ -16,7 +16,7 @@ Related docs:
 
 | Decision | Choice |
 |----------|--------|
-| Compute | Single EC2 `t4g.medium` (ARM, 4 GiB RAM) |
+| Compute | Single EC2 `t4g.small` (ARM, 2 GiB RAM; `EMBEDDINGS_ENABLED=false`) |
 | Orchestration | Docker Compose (prod overlay, not dev bind-mounts) |
 | Images | ECR (`newspulse-api`, `newspulse-web`) |
 | Database | Postgres 17 + pgvector on the same instance |
@@ -33,7 +33,7 @@ Related docs:
 flowchart TB
   user[Browser]
   cf[Cloudflare_TLS_optional]
-  ec2[EC2_t4g_medium]
+  ec2[EC2_t4g_small]
   proxy[Caddy_or_Nginx]
   next[Next.js_container]
   django[Django_Gunicorn]
@@ -104,9 +104,8 @@ Base reference: [docker-compose.yml](../docker-compose.yml) (dev). Production ne
 
 ### EC2
 
-- **Type:** `t4g.medium` (2 vCPU, 4 GiB), e.g. `us-east-1` ≈ $24/mo on-demand
-- **With `EMBEDDINGS_ENABLED=false` (default):** `t4g.small` (2 GiB) can run scrape + cluster + summarize; embeddings are off the main worker.
-- **With embeddings:** use `t4g.medium` (4 GiB) or run `celery-embeddings` on a separate instance/profile.
+- **Type (default):** `t4g.small` (2 vCPU, 2 GiB), e.g. `ap-south-1` (Mumbai) — fits scrape + cluster + summarize with `EMBEDDINGS_ENABLED=false` (default).
+- **With embeddings:** upgrade to `t4g.medium` (4 GiB) or run `celery-embeddings` on a separate instance/profile.
 - **Disk:** 30–40 GiB gp3 root (Postgres + `model_cache` for Hugging Face model)
 - **Elastic IP:** stable DNS target (small charge if instance is stopped)
 
@@ -188,7 +187,7 @@ Full checklist: [production-security.md](production-security.md).
 
 | Service | Use |
 |---------|-----|
-| EC2 `t4g.medium` | Full stack |
+| EC2 `t4g.small` | Full stack (no local embeddings) |
 | ECR | API + web images |
 | Elastic IP | Stable DNS |
 | Route53 | Optional hosted zone (~$0.50/mo) |
@@ -201,16 +200,16 @@ Full checklist: [production-security.md](production-security.md).
 
 ---
 
-## Monthly cost estimate (`us-east-1`)
+## Monthly cost estimate (`ap-south-1`, Mumbai)
 
 | Item | ~USD/mo |
 |------|---------|
-| `t4g.medium` | 24 |
+| `t4g.small` | ~12 |
 | 40 GiB gp3 | 3 |
 | ECR (2 images) | 1–2 |
 | SES (low volume) | 0 |
 | Cloudflare | 0 |
-| **Infra subtotal** | **28–35** |
+| **Infra subtotal** | **~16–20** |
 | LLM API (OpenRouter, etc.) | usage-based |
 
 ---
@@ -236,15 +235,19 @@ Migrate incrementally (~500+ users or HA needs):
 
 ## Implementation checklist
 
-Repo and AWS setup still to do when you take this over:
+Repo artifacts (run on EC2 / in CI):
 
-- [ ] Add `docker-compose.prod.yml` — ECR images only, no dev bind-mounts, no Flower/Metabase, no published DB/Redis ports, keep `model_cache` volume
-- [ ] Add `deploy/Caddyfile` or `deploy/nginx.conf` — hostname routing, forwarded headers
-- [ ] Add `deploy/bootstrap-ec2.sh` — Docker, Compose v2, AWS CLI, SSM agent
-- [ ] Create ECR repos + GitHub Actions (build/push API from [Dockerfile](../Dockerfile), web from `news-pulse-frontend/Dockerfile`)
-- [ ] EC2: launch instance, security group, Elastic IP, attach IAM role for ECR pull
-- [ ] DNS: `www` + `api` → EC2 or Cloudflare
-- [ ] SES: verify domain, SMTP credentials in `.env`
-- [ ] First deploy: `migrate`, `createsuperuser`, seed tabs/sources if needed ([seed-tabs-and-sources.md](seed-tabs-and-sources.md))
-- [ ] Smoke test: login, feed, chat, one Celery scrape cycle
-- [ ] `pg_dump` → S3 cron + CloudWatch CPU alarm
+- [x] `docker-compose.prod.yml` — ECR images, Caddy, no Flower/Metabase, internal DB/Redis
+- [x] `deploy/Caddyfile` — hostname routing, forwarded headers
+- [x] `deploy/bootstrap-ec2.sh` — Docker, Compose v2, AWS CLI, SSM agent
+- [x] GitHub Actions — [`.github/workflows/deploy-ecr.yml`](../.github/workflows/deploy-ecr.yml) (API); frontend repo has web workflow
+- [x] `deploy/aws-foundation.sh` — ECR repos, security group, IAM instance profile (run locally with AWS CLI)
+- [x] `deploy/cloudflare-ses.md` — DNS + SES + `.env` checklist
+- [x] `deploy/deploy.sh` — pull, up, migrate
+- [x] `deploy/smoke-test.sh` — health, Swagger off, Celery ping
+- [x] `deploy/pg-dump-s3.sh` + `setup-backup-cron.sh` + `setup-cloudwatch-alarm.sh`
+- [x] Optional SSM deploy — [`.github/workflows/deploy-ssm.yml`](../.github/workflows/deploy-ssm.yml)
+
+**You still run manually:** launch EC2 + Elastic IP, point Cloudflare, fill `.env`, first `createsuperuser`, seed, and smoke test in the browser.
+
+See [deploy/README.md](../deploy/README.md) for the step-by-step runbook.

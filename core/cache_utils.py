@@ -45,6 +45,6 @@ class CacheManager:
         return new_data
 
     @staticmethod
-    def invalidate(key: pattern_or_string: str):
+    def invalidate(key: str):
         """Deletes a specific cache key."""
         cache.delete(key)

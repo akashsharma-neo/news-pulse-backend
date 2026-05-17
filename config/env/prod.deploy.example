@@ -1,0 +1,18 @@
+# Production deploy overlay — copy to /opt/newspulse/.env on EC2.
+# Base secrets: config/env/prod.example
+
+NEWSMINE_ENV=prod
+
+# ECR (set after first CI push; include tag, e.g. :latest or :sha)
+AWS_REGION=ap-south-1
+ECR_API_IMAGE=123456789012.dkr.ecr.ap-south-1.amazonaws.com/newspulse-api:latest
+ECR_WEB_IMAGE=123456789012.dkr.ecr.ap-south-1.amazonaws.com/newspulse-web:latest
+
+# Caddy / DNS (must match Cloudflare records)
+CADDY_DOMAIN_WWW=www.yourdomain.com
+CADDY_DOMAIN_API=api.yourdomain.com
+CADDY_ACME_EMAIL=you@yourdomain.com
+
+# Baked into frontend image at CI build time (also set here for compose env)
+NEXT_PUBLIC_NEWSMINE_ENV=prod
+NEXT_PUBLIC_API_URL=https://api.yourdomain.com/api

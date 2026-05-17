@@ -12,7 +12,7 @@ from django.urls import path
 from .views import SubscribeView, UnsubscribeView, ResendDigestView
 
 urlpatterns = [
-    path("subscribe/", SubscribeView.as_view(), name="subscribe"),
-    path("unsubscribe/", UnsubscribeView.as_view(), name="unsubscribe"),
-    path("resend/", ResendDigestView.as_view(), name="resend"),
+    path("digest/subscribe/", SubscribeView.as_view(), name="subscribe"),
+    path("digest/unsubscribe/", UnsubscribeView.as_view(), name="unsubscribe"),
+    path("digest/resend/", ResendDigestView.as_view(), name="resend"),
 ]

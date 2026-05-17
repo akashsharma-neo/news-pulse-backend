@@ -1,0 +1,21 @@
+# Production reverse proxy for NewsPulse (Cloudflare Full strict).
+# Set CADDY_DOMAIN_WWW and CADDY_DOMAIN_API in .env (passed as container env).
+# Caddy obtains Let's Encrypt certs on the origin for both hostnames.
+
+{
+	email {$CADDY_ACME_EMAIL:admin@localhost}
+}
+
+{$CADDY_DOMAIN_WWW} {
+	encode gzip
+	reverse_proxy frontend:3000
+}
+
+{$CADDY_DOMAIN_API} {
+	encode gzip
+	reverse_proxy django:8000 {
+		header_up Host {host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+	}
+}

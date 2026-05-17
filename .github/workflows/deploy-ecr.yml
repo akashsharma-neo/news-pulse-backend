@@ -1,0 +1,60 @@
+name: Build and push to ECR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**'
+      - '.github/workflows/deploy-ecr.yml'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag (default: git sha)'
+        required: false
+        type: string
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  ECR_API_REPO: newspulse-api
+
+jobs:
+  build-api:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: meta
+        run: |
+          TAG="${{ github.event.inputs.image_tag }}"
+          if [[ -z "$TAG" ]]; then TAG="${{ github.sha }}"; fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          ACCOUNT="${{ steps.ecr.outputs.registry }}"
+          echo "api_image=${ACCOUNT}/${{ env.ECR_API_REPO }}:${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.api_image }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_API_REPO }}:latest
+          platforms: linux/arm64
+
+      - name: Image summary
+        run: echo "Pushed ${{ steps.meta.outputs.api_image }}"
