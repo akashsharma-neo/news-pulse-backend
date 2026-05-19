@@ -213,9 +213,10 @@ SUMMARIZE_MAX_TOKENS = int(os.environ.get('SUMMARIZE_MAX_TOKENS', '250'))
 SUMMARIZE_FETCH_FULL_BODY = os.environ.get(
     'SUMMARIZE_FETCH_FULL_BODY', 'false'
 ).lower() in ('true', '1', 'yes')
-SUMMARIZE_ENABLED = os.environ.get('SUMMARIZE_ENABLED', 'true').lower() in (
-    'true', '1', 'yes'
-)
+_summarize_default = 'false' if NEWSMINE_ENV == 'dev' else 'true'
+SUMMARIZE_ENABLED = os.environ.get(
+    'SUMMARIZE_ENABLED', _summarize_default,
+).lower() in ('true', '1', 'yes')
 
 EMBEDDINGS_ENABLED = os.environ.get('EMBEDDINGS_ENABLED', 'false').lower() in (
     'true', '1', 'yes'

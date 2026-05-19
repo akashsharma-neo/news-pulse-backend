@@ -19,6 +19,7 @@ export CELERY_TASK_ALWAYS_EAGER=True
 export CELERY_TASK_EAGER_PROPAGATES=True
 export DJANGO_DEBUG=true
 export EMBEDDINGS_ENABLED=false
+export SUMMARIZE_ENABLED=true
 export SUMMARIZE_FETCH_FULL_BODY=false
 export EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend
 
