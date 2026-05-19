@@ -22,12 +22,20 @@ env:
 
 jobs:
   build-api:
-    runs-on: ubuntu-latest
+    # EC2 is ARM (t4g). ubuntu-22.04 + QEMU avoids apt-get exit 255 on ubuntu-latest/24.04.
+    # Public repos can switch to runs-on: ubuntu-24.04-arm and drop setup-qemu for faster native builds.
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -68,6 +76,7 @@ jobs:
             ${{ steps.meta.outputs.api_image }}
             ${{ steps.meta.outputs.api_latest }}
           platforms: linux/arm64
+          provenance: false
 
       - name: Summary
         run: |
