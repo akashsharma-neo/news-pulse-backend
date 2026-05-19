@@ -8,6 +8,7 @@ for related objects (source name, category slug, etc.).
 from rest_framework import serializers
 
 from articles.image_resolver import resolve_cluster_display_image
+from worker.article_content import clean_article_text, truncate_at_sentence_boundary
 
 from .models import Tab, Source, Article, TopicCluster
 
@@ -120,18 +121,15 @@ class TopicClusterSerializer(serializers.ModelSerializer):
         return obj.source_names()
 
     def get_summary(self, obj: TopicCluster) -> str:
-        """LLM digest when present; otherwise a short preview from the primary article."""
+        """LLM digest when present; otherwise a cleaned excerpt from the primary article."""
         if obj.summary:
-            return obj.summary
+            return clean_article_text(obj.summary)
         article = obj.primary_article
         if not article:
             return ""
         if article.summary:
-            return article.summary
-        text = (article.full_text or "").strip()
+            return clean_article_text(article.summary)
+        text = clean_article_text(article.full_text or "")
         if text:
-            words = text.split()
-            if len(words) <= 60:
-                return text
-            return " ".join(words[:60]) + "..."
+            return truncate_at_sentence_boundary(text)
         return article.title or ""

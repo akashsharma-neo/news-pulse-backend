@@ -192,9 +192,24 @@ OPENAI_COMPATIBLE_MODEL = os.environ.get(
     os.environ.get('OPENAI_MODEL', ''),
 )
 
+# Article chat — OpenRouter web search (openrouter:web_search server tool)
+_chat_web_search_env = os.environ.get('CHAT_WEB_SEARCH_ENABLED', '').lower()
+if _chat_web_search_env in ('true', '1', 'yes'):
+    CHAT_WEB_SEARCH_ENABLED = True
+elif _chat_web_search_env in ('false', '0', 'no'):
+    CHAT_WEB_SEARCH_ENABLED = False
+else:
+    CHAT_WEB_SEARCH_ENABLED = 'openrouter.ai' in OPENAI_COMPATIBLE_BASE_URL
+CHAT_WEB_SEARCH_MAX_RESULTS = int(os.environ.get('CHAT_WEB_SEARCH_MAX_RESULTS', '5'))
+CHAT_WEB_SEARCH_MAX_TOTAL_RESULTS = int(
+    os.environ.get('CHAT_WEB_SEARCH_MAX_TOTAL_RESULTS', '10')
+)
+CHAT_MAX_TOKENS = int(os.environ.get('CHAT_MAX_TOKENS', '1024'))
+CHAT_TEMPERATURE = float(os.environ.get('CHAT_TEMPERATURE', '0.7'))
+
 SUMMARIZE_BATCH_SIZE = int(os.environ.get('SUMMARIZE_BATCH_SIZE', '12'))
 SUMMARIZE_DELAY_SEC = float(os.environ.get('SUMMARIZE_DELAY_SEC', '4'))
-SUMMARIZE_MAX_TOKENS = int(os.environ.get('SUMMARIZE_MAX_TOKENS', '180'))
+SUMMARIZE_MAX_TOKENS = int(os.environ.get('SUMMARIZE_MAX_TOKENS', '250'))
 SUMMARIZE_FETCH_FULL_BODY = os.environ.get(
     'SUMMARIZE_FETCH_FULL_BODY', 'false'
 ).lower() in ('true', '1', 'yes')

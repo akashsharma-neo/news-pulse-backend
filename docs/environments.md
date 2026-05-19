@@ -43,6 +43,8 @@ cd ../news-pulse-backend
 docker compose up -d --build
 ```
 
+The `django` service runs `python manage.py migrate --noinput` on each start (via `docker/django-entrypoint.sh`), then Gunicorn.
+
 **LM Studio:** start the local server on port `1234` and load `google/gemma-4-e4b`. Containers reach it at `http://host.docker.internal:1234/v1`.
 
 | Variable | Dev value |

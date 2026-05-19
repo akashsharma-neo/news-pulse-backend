@@ -40,6 +40,16 @@ Set in `.env` or Docker (see [celery-pipeline.md](./celery-pipeline.md) for the 
 | `OPENAI_COMPATIBLE_API_KEY` | OpenRouter key (`sk-or-v1-...`) |
 | `OPENAI_COMPATIBLE_BASE_URL` | Default `https://openrouter.ai/api/v1` |
 | `OPENAI_COMPATIBLE_MODEL` | Model id on OpenRouter |
+| `CHAT_WEB_SEARCH_ENABLED` | Enable OpenRouter `openrouter:web_search` tool (default: `true` when base URL is OpenRouter) |
+| `CHAT_WEB_SEARCH_MAX_RESULTS` | Max results per search call (default `5`) |
+| `CHAT_WEB_SEARCH_MAX_TOTAL_RESULTS` | Cap total searches per chat turn (default `10`) |
+| `CHAT_MAX_TOKENS` | Max assistant reply tokens (default `1024`) |
+
+### Web search
+
+Chat requests attach OpenRouter’s [`openrouter:web_search`](https://openrouter.ai/docs/guides/features/server-tools/web-search) server tool when `CHAT_WEB_SEARCH_ENABLED` is on (auto-enabled for `openrouter.ai` base URLs). The model decides whether to search — e.g. for “what happened since this story?” — rather than searching on every message.
+
+**Cost:** Each search uses OpenRouter credits (~$0.005 per Exa/Parallel search request, plus extra input tokens for result snippets). Questions answered only from the article context usually incur **no** search fee. Set `CHAT_WEB_SEARCH_ENABLED=false` to disable. Local LM Studio / non-OpenRouter backends should leave this off (default when base URL is not OpenRouter).
 
 Restart the Django web container/process after changing env vars.
 

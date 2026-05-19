@@ -13,6 +13,7 @@
 #
 # Usage:
 #   docker compose up -d
+#   (django runs migrate --noinput on start, then gunicorn)
 #   docker compose logs -f celery   # watch worker logs
 #   docker compose down -v          # stop + remove volumes
 #
@@ -64,6 +65,7 @@ x-app-code-volumes: &app-code-volumes
   - ./chat:/app/chat
   - ./digest:/app/digest
   - ./users:/app/users
+  - ./docker/django-entrypoint.sh:/app/docker/django-entrypoint.sh:ro
 
 services:
   postgres:
@@ -104,6 +106,7 @@ services:
     build: .
     container_name: np-django
     restart: unless-stopped
+    entrypoint: ["/app/docker/django-entrypoint.sh"]
     command: >
       gunicorn core.wsgi:application
       --bind 0.0.0.0:8000

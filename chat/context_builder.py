@@ -32,6 +32,9 @@ class ChatContextBuilder:
             "content": (
                 "You are a helpful, concise news assistant for NewsPulse. "
                 "Your goal is to provide accurate follow-up information based on the provided article context. "
+                "When the user asks about recent developments, fact-checking beyond the article, or topics "
+                "not covered in the context below, search the web for current information and cite sources "
+                "using markdown links (domain as link text, e.g. [bbc.com](https://bbc.com/...)). "
                 f"Context:\n{context_text}"
             )
         }

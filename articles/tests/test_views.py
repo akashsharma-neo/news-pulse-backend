@@ -12,17 +12,11 @@ from articles.models import Tab, Source, Article, TopicCluster
         'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
         'PAGE_SIZE': 20,
         'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-        'DEFAULT_THROTTLE_CLASSES': (
-            'rest_framework.throttling.AnonRateThrottle',
-            'rest_framework.throttling.UserRateThrottle',
-            'rest_framework.throttling.ScopedRateThrottle',
-        ),
-        'DEFAULT_THROTTLE_RATES': {
-            'anon': '1000000/hour',
-            'user': '1000000/hour',
-            'auth': '1000000/hour',
-            'chat_send': '1000000/hour',
-            'digest_subscribe': '1000000/hour',
+        'DEFAULT_THROTTLE_CLASSES': [],
+    },
+    CACHES={
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         },
     },
 )
@@ -113,23 +107,34 @@ class ClusterViewTest(TestCase):
         response = self.client.get("/api/clusters/?ordering=-created_at")
         self.assertEqual(response.status_code, 200)
 
+    def test_cluster_related_excludes_self(self):
+        extra = Article.objects.create(
+            title="More India", url="https://ndtv.com/2",
+            source=self.india_source, published_at=timezone.now(),
+        )
+        extra_cluster = TopicCluster.objects.create(
+            topic_id="00000000-0000-0000-0000-000000000003",
+            primary_article=extra, summary="Another india story.",
+        )
+        response = self.client.get(f"/api/clusters/{self.cluster1.pk}/related/")
+        self.assertEqual(response.status_code, 200)
+        ids = [item["id"] for item in response.data]
+        self.assertNotIn(self.cluster1.pk, ids)
+        self.assertIn(extra_cluster.pk, ids)
+        for item in response.data:
+            self.assertEqual(item["category_slug"], "india")
+
 
 @override_settings(
     REST_FRAMEWORK={
         'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
         'PAGE_SIZE': 20,
         'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-        'DEFAULT_THROTTLE_CLASSES': (
-            'rest_framework.throttling.AnonRateThrottle',
-            'rest_framework.throttling.UserRateThrottle',
-            'rest_framework.throttling.ScopedRateThrottle',
-        ),
-        'DEFAULT_THROTTLE_RATES': {
-            'anon': '1000000/hour',
-            'user': '1000000/hour',
-            'auth': '1000000/hour',
-            'chat_send': '1000000/hour',
-            'digest_subscribe': '1000000/hour',
+        'DEFAULT_THROTTLE_CLASSES': [],
+    },
+    CACHES={
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         },
     },
 )

@@ -7,7 +7,11 @@ from bs4 import BeautifulSoup
 
 from worker.article_content import (
     MAX_SUMMARY_SOURCE_CHARS,
+    TARGET_SUMMARY_WORDS_MAX,
+    TARGET_SUMMARY_WORDS_MIN,
+    TARGET_SUMMARY_FALLBACK_WORDS,
     build_summarize_prompt,
+    clean_article_text,
     enrich_article_content,
     extract_listing_content,
     extract_rss_entry_content,
@@ -15,8 +19,47 @@ from worker.article_content import (
     gather_articles_for_summary,
     html_to_plain_text,
     is_summary_too_short,
+    is_usable_article_body,
+    truncate_at_sentence_boundary,
     word_count,
 )
+
+
+class CleanArticleTextTests(SimpleTestCase):
+    def test_strips_html_and_tags(self):
+        raw = "<p>Prime Minister announced reforms today in a major policy speech.</p>"
+        text = clean_article_text(raw)
+        self.assertNotIn("<p>", text)
+        self.assertIn("Prime Minister", text)
+
+    def test_removes_login_boilerplate(self):
+        raw = (
+            "Subscribe to continue reading this story on The Hindu. "
+            "The cabinet approved the infrastructure bill after a lengthy debate in parliament."
+        )
+        text = clean_article_text(raw)
+        self.assertNotIn("Subscribe", text)
+        self.assertIn("infrastructure bill", text)
+
+    def test_is_usable_rejects_subscribe_only(self):
+        self.assertFalse(is_usable_article_body("Subscribe to continue reading this story."))
+
+    def test_is_usable_accepts_news_body(self):
+        body = " ".join(["Officials confirmed the policy details today."] * 8)
+        self.assertTrue(is_usable_article_body(body))
+
+
+class TruncateAtSentenceBoundaryTests(SimpleTestCase):
+    def test_truncates_with_ellipsis_when_no_sentence_end(self):
+        text = " ".join(["word"] * 150)
+        result = truncate_at_sentence_boundary(text, 120)
+        self.assertLessEqual(word_count(result), 121)
+        self.assertTrue(result.endswith("..."))
+
+    def test_prefers_sentence_boundary(self):
+        sentences = " ".join([f"Sentence number {i} has enough words here." for i in range(20)])
+        result = truncate_at_sentence_boundary(sentences, 30)
+        self.assertTrue(result.endswith(".") or result.endswith("..."))
 
 
 class HtmlToPlainTextTests(SimpleTestCase):
@@ -122,6 +165,30 @@ class EnrichArticleContentTests(SimpleTestCase):
         )
         self.assertEqual(result, listing)
 
+    def test_prefers_rss_when_page_is_login_wall(self):
+        listing = (
+            "The cabinet approved the infrastructure bill after a lengthy debate in parliament "
+            "with cross-party support for the core funding measures announced today."
+        )
+        page_html = """
+        <article>
+          <p>Subscribe to continue reading this story on The Hindu website today.</p>
+          <p>Sign in to your account to access premium journalism content.</p>
+        </article>
+        """
+
+        def fetch(_url):
+            return page_html
+
+        result = enrich_article_content(
+            "https://thehindu.com/story",
+            listing,
+            {"prefer_rss_body": True},
+            fetch,
+        )
+        self.assertIn("infrastructure bill", result)
+        self.assertNotIn("Subscribe", result)
+
 
 class ExtractRssEntryContentTests(SimpleTestCase):
     def test_prefers_content_encoded(self):
@@ -155,7 +222,7 @@ class BuildSummarizePromptTests(SimpleTestCase):
             source_material="Body text here.",
             source_names=["BBC", "CNN"],
         )
-        self.assertIn("60 and 80 words", prompt)
+        self.assertIn(f"{TARGET_SUMMARY_WORDS_MIN} and {TARGET_SUMMARY_WORDS_MAX} words", prompt)
         self.assertIn("BBC, CNN", prompt)
 
     def test_includes_title_and_source(self):
@@ -183,13 +250,13 @@ class IsSummaryTooShortTests(SimpleTestCase):
         self.assertTrue(is_summary_too_short("Just a tiny line."))
 
     def test_long_enough_is_false(self):
-        self.assertFalse(is_summary_too_short(" ".join(["word"] * 45)))
+        self.assertFalse(is_summary_too_short(" ".join(["word"] * 90)))
 
     def test_empty_string_is_true(self):
         self.assertTrue(is_summary_too_short(""))
 
     def test_exactly_at_threshold(self):
-        self.assertFalse(is_summary_too_short(" ".join(["word"] * 45)))
+        self.assertFalse(is_summary_too_short(" ".join(["word"] * 85)))
 
 
 class FallbackSummaryTests(SimpleTestCase):
@@ -197,10 +264,10 @@ class FallbackSummaryTests(SimpleTestCase):
         article = MagicMock()
         article.summary = ""
         article.title = "Headline"
-        article.full_text = " ".join(["word"] * 100)
+        article.full_text = " ".join(["word"] * 200)
         summary = fallback_summary_from_article(article)
-        self.assertEqual(word_count(summary), 60)
-        self.assertTrue(summary.endswith("..."))
+        self.assertLessEqual(word_count(summary), TARGET_SUMMARY_FALLBACK_WORDS + 1)
+        self.assertTrue(summary.endswith("...") or summary.endswith("."))
 
     def test_returns_existing_summary(self):
         article = MagicMock()
@@ -238,14 +305,20 @@ class GatherArticlesForSummaryTests(SimpleTestCase):
         self.assertNotIn("Related", material)
         self.assertLessEqual(len(material), MAX_SUMMARY_SOURCE_CHARS)
 
-    def test_includes_one_related_for_multi_source(self):
+    def test_includes_related_for_multi_source(self):
         primary = MagicMock()
         primary.title = "Story"
-        primary.full_text = "Body"
+        primary.full_text = (
+            "The cabinet approved the infrastructure bill after debate in parliament today "
+            "with support from several regional parties and industry representatives present."
+        )
         primary.source.name = "BBC"
         related = MagicMock()
         related.title = "Same story"
-        related.full_text = "Other angle"
+        related.full_text = (
+            "Officials confirmed the same policy details in a briefing outlining economic "
+            "impacts and regional timelines for implementation of the new government rules."
+        )
         related.source.name = "CNN"
         material = gather_articles_for_summary(
             primary, [related], source_names=["BBC", "CNN"]
@@ -256,10 +329,13 @@ class GatherArticlesForSummaryTests(SimpleTestCase):
     def test_returns_primary_only_when_no_related(self):
         primary = MagicMock()
         primary.title = "Story"
-        primary.full_text = "Primary body here."
+        primary.full_text = (
+            "The cabinet approved the infrastructure bill after debate in parliament today "
+            "with support from several regional parties and industry representatives present."
+        )
         primary.source.name = "BBC"
         material = gather_articles_for_summary(primary, [], source_names=["BBC"])
-        self.assertIn("Primary body", material)
+        self.assertIn("infrastructure bill", material)
         self.assertNotIn("Related", material)
 
     def test_truncates_long_text(self):
@@ -281,6 +357,5 @@ class WordCountTests(SimpleTestCase):
     def test_whitespace(self):
         self.assertEqual(word_count("   "), 0)
 
-    def test_none_raises(self):
-        with self.assertRaises(AttributeError):
-            word_count(None)
+    def test_none_returns_zero(self):
+        self.assertEqual(word_count(None), 0)

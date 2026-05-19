@@ -27,6 +27,7 @@ _THROTTLE_OVERRIDE = {
 from articles.models import Tab, Source, Article, TopicCluster
 from chat.models import ChatMessage
 from chat.context_builder import ChatContextBuilder
+from chat.llm import build_chat_completion_kwargs, chat_web_search_enabled
 
 
 class ChatModelTest(TestCase):
@@ -102,6 +103,33 @@ class ChatContextBuilderTest(TestCase):
         self.assertIn("BBC", context)
         self.assertIn("https://bbc.com/1", context)
 
+    def test_system_prompt_mentions_web_search(self):
+        builder = ChatContextBuilder()
+        messages = builder.get_messages_for_api(self.cluster)
+        self.assertIn("search the web", messages[0]["content"])
+
+
+class ChatLLMTest(TestCase):
+    @override_settings(
+        CHAT_WEB_SEARCH_ENABLED=True,
+        CHAT_WEB_SEARCH_MAX_RESULTS=3,
+        CHAT_WEB_SEARCH_MAX_TOTAL_RESULTS=8,
+        OPENAI_COMPATIBLE_MODEL="meta-llama/llama-3.1-8b-instruct",
+    )
+    def test_build_kwargs_includes_web_search_tool(self):
+        messages = [{"role": "user", "content": "What happened today?"}]
+        kwargs = build_chat_completion_kwargs(messages)
+        self.assertTrue(chat_web_search_enabled())
+        tools = kwargs["extra_body"]["tools"]
+        self.assertEqual(tools[0]["type"], "openrouter:web_search")
+        self.assertEqual(tools[0]["parameters"]["max_results"], 3)
+        self.assertEqual(tools[0]["parameters"]["max_total_results"], 8)
+
+    @override_settings(CHAT_WEB_SEARCH_ENABLED=False, OPENAI_COMPATIBLE_MODEL="gpt-4o-mini")
+    def test_build_kwargs_omits_web_search_when_disabled(self):
+        kwargs = build_chat_completion_kwargs([{"role": "user", "content": "Hi"}])
+        self.assertNotIn("extra_body", kwargs)
+
 
 @override_settings(REST_FRAMEWORK=_THROTTLE_OVERRIDE)
 class ChatAPITest(TestCase):
@@ -168,7 +196,11 @@ class ChatAPITest(TestCase):
                                      {"cluster_id": 99999, "content": "Hi"}, format="json")
         self.assertEqual(response.status_code, 404)
 
-    @override_settings(OPENAI_COMPATIBLE_API_KEY="sk-test", OPENAI_COMPATIBLE_MODEL="gpt-4o-mini")
+    @override_settings(
+        OPENAI_COMPATIBLE_API_KEY="sk-test",
+        OPENAI_COMPATIBLE_MODEL="gpt-4o-mini",
+        CHAT_WEB_SEARCH_ENABLED=True,
+    )
     @patch("chat.views.get_openai_client")
     def test_send_message_creates_messages(self, mock_get_client):
         self._login()
@@ -186,6 +218,11 @@ class ChatAPITest(TestCase):
         self.assertEqual(response.data["user_message"]["content"], "Explain this")
         self.assertEqual(response.data["assistant_message"]["content"], "AI response.")
         self.assertEqual(ChatMessage.objects.count(), 2)
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        self.assertEqual(
+            call_kwargs["extra_body"]["tools"][0]["type"],
+            "openrouter:web_search",
+        )
 
     @override_settings(OPENAI_COMPATIBLE_API_KEY="sk-test", OPENAI_COMPATIBLE_MODEL="gpt-4o-mini")
     @patch("chat.views.get_openai_client")

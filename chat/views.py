@@ -14,6 +14,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from .models import ChatMessage
 from .serializers import ChatMessageSerializer
 from .context_builder import ChatContextBuilder
+from .llm import build_chat_completion_kwargs
 from articles.models import TopicCluster
 
 logger = logging.getLogger(__name__)
@@ -136,10 +137,7 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
         try:
             client = get_openai_client()
             response = client.chat.completions.create(
-                model=settings.OPENAI_COMPATIBLE_MODEL,
-                messages=messages_for_api,
-                max_tokens=1024,
-                temperature=0.7,
+                **build_chat_completion_kwargs(messages_for_api),
             )
             assistant_content = response.choices[0].message.content
 

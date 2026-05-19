@@ -76,6 +76,16 @@ class TopicClusterViewSet(viewsets.ReadOnlyModelViewSet):
         """GET /api/clusters/tabs/ — list navigation tabs."""
         return Response(TabSerializer(Tab.objects.all(), many=True).data)
 
+    @action(detail=True, methods=["get"])
+    def related(self, request, pk=None):
+        """GET /api/clusters/{id}/related/ — recent clusters in the same tab."""
+        cluster = self.get_object()
+        limit = min(int(request.query_params.get("limit", 8)), 20)
+        tab_slug = cluster.primary_article.source.category.slug
+        qs = cluster_feed_queryset(tab=tab_slug).exclude(pk=cluster.pk)[:limit]
+        serializer = TopicClusterSerializer(qs, many=True)
+        return Response(serializer.data)
+
     @action(detail=False, url_path="list_cached", url_name="list_cached")
     def list_cached(self, request):
         """Cached version of the cluster list endpoint.

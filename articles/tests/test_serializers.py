@@ -5,6 +5,10 @@ from django.utils import timezone
 from articles.models import Tab, Source, Article, TopicCluster
 
 
+def word_count(text: str) -> int:
+    return len(text.split())
+
+
 class TabSerializerTest(TestCase):
     def setUp(self):
         self.tab = Tab.objects.create(name="India", slug="india", order=1)
@@ -107,11 +111,11 @@ class TopicClusterSerializerTest(TestCase):
         self.cluster.summary = ""
         self.cluster.save()
         self.article.summary = ""
-        self.article.full_text = " ".join(["word"] * 100)
+        self.article.full_text = " ".join(["word"] * 200)
         self.article.save()
         data = TopicClusterSerializer(self.cluster).data
-        self.assertTrue(data["summary"].endswith("..."))
-        self.assertLess(len(data["summary"]), len(self.article.full_text))
+        self.assertLess(word_count(data["summary"]), 200)
+        self.assertGreater(word_count(data["summary"]), 50)
 
     def test_cluster_serializer_source_names(self):
         from articles.serializers import TopicClusterSerializer

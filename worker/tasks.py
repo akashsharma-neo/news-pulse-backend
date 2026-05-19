@@ -26,14 +26,17 @@ from feedparser import parse as parse_rss
 from articles.image_resolver import extract_rss_image, extract_web_image, pick_cluster_image
 from articles.models import Article, Source, Tab, TopicCluster
 from worker.article_content import (
+    MAX_RELATED_ARTICLES_FOR_SUMMARY,
     MIN_BODY_WORDS,
     build_summarize_prompt,
+    clean_article_text,
     enrich_article_content,
     extract_listing_content,
     extract_rss_entry_content,
     fallback_summary_from_article,
     gather_articles_for_summary,
     is_summary_too_short,
+    is_usable_article_body,
     word_count,
 )
 
@@ -69,6 +72,9 @@ SCRAPER_CONFIGS = {
         "category": "india",
         "source_type": "rss",
         "url": "https://www.thehindu.com/news/national/feeder/default.rss",
+        "selector_content": ".articlebodycontent, .article-section, #content-body",
+        "exclude_selectors": ".paywall, .subscribe, [class*='login'], [class*='subscription']",
+        "prefer_rss_body": True,
     },
     "Moneycontrol": {
         "category": "business",
@@ -332,13 +338,18 @@ def scrape_source(self, source_id: int) -> dict:
         max_detail_fetches = config.get("max_detail_fetches", 15)
         detail_fetches = 0
 
-        for article_data in articles_data:
-            if Article.objects.filter(url=article_data["url"]).exists():
-                skipped += 1
-                continue
+        new_articles = [
+            ad for ad in articles_data
+            if not Article.objects.filter(url=ad["url"]).exists()
+        ]
+        skipped = fetched - len(new_articles)
 
-            content = article_data.get("content", "")
-            if detail_fetches < max_detail_fetches:
+        # Prioritize detail-page fetches for thin RSS/listing bodies.
+        new_articles.sort(key=lambda ad: word_count(clean_article_text(ad.get("content", ""))))
+
+        for article_data in new_articles:
+            content = clean_article_text(article_data.get("content", ""), source.name)
+            if detail_fetches < max_detail_fetches and word_count(content) < MIN_BODY_WORDS:
                 enriched = enrich_article_content(
                     article_data["url"],
                     content,
@@ -348,6 +359,8 @@ def scrape_source(self, source_id: int) -> dict:
                 if word_count(enriched) > word_count(content):
                     detail_fetches += 1
                     content = enriched
+
+            content = clean_article_text(content, source.name)
 
             pub_at = article_data.get("published_at")
             if pub_at is None:
@@ -537,7 +550,7 @@ def cluster_and_summarize() -> dict:
     """
     Cluster unclustered articles and create TopicClusters.
 
-    An article is "unclustered" if it has no TopicCluster reference.
+    An article is "unclustered" if it has no topic_cluster FK.
     We cluster articles from the last 48 hours.
 
     Returns {"clusters_created": N, "articles_clustered": N, "leftover": N}
@@ -549,8 +562,7 @@ def cluster_and_summarize() -> dict:
     # Get unclustered articles from the last 48 hours
     unclustered = Article.objects.filter(
         fetched_at__gte=cutoff,
-    ).exclude(
-        pk__in=TopicCluster.objects.values_list("primary_article_id", flat=True)
+        topic_cluster__isnull=True,
     ).order_by("-published_at")
 
     if not unclustered.exists():
@@ -589,14 +601,16 @@ def cluster_and_summarize() -> dict:
                 cluster_articles, primary, cat_slug
             )
 
-            # Create TopicCluster
-            TopicCluster.objects.create(
+            # Create TopicCluster and link all member articles
+            cluster = TopicCluster.objects.create(
                 topic_id=uuid.uuid4(),
                 primary_article=primary,
                 summary="",  # Will be filled by summarization task (1.6)
                 sources=source_names,
                 image_url=cluster_image_url[:2048],
             )
+            member_ids = [a.pk for a in cluster_articles]
+            Article.objects.filter(pk__in=member_ids).update(topic_cluster=cluster)
             total_clusters += 1
             total_clustered += len(cluster_articles)
 
@@ -660,13 +674,14 @@ def _related_articles_for_cluster(
 
 def _ensure_primary_article_body(article: Article, config: dict | None = None) -> str:
     """Return full body text, fetching the article page when stored text is thin."""
-    body = (article.full_text or "").strip()
-    if word_count(body) >= 80:
+    source_name = article.source.name if article.source else ""
+    body = clean_article_text(article.full_text or "", source_name)
+    if word_count(body) >= MIN_BODY_WORDS and is_usable_article_body(body, source_name):
         return body
 
-    source_name = article.source.name if article.source else ""
     cfg = config or SCRAPER_CONFIGS.get(source_name, {})
     enriched = enrich_article_content(article.url, body, cfg, _fetch_page)
+    enriched = clean_article_text(enriched, source_name)
     if word_count(enriched) > word_count(body):
         article.full_text = enriched
         article.save(update_fields=["full_text"])
@@ -683,8 +698,8 @@ def summarize_clusters(self) -> dict:
     """
     Generate AI summaries for TopicClusters with empty summaries.
 
-    Calls OpenAI to produce a concise 60-80 word summary based on the
-    primary article's title, content, and source information.
+    Calls OpenAI to produce a ~100-120 word summary from cluster member
+    article bodies (primary + related members).
 
     Returns {"summarized": N, "skipped": N}.
     """
@@ -730,7 +745,7 @@ def summarize_clusters(self) -> dict:
         title = article.title or ""
         source_names = cluster.source_names()
 
-        if len(source_names) <= 1 and word_count((article.full_text or "").strip()) >= MIN_BODY_WORDS:
+        if len(source_names) <= 1 and is_usable_article_body(article.full_text or "", source_name):
             cluster.summary = fallback_summary_from_article(article)
             cluster.save(update_fields=["summary"])
             summarized += 1
@@ -741,21 +756,24 @@ def summarize_clusters(self) -> dict:
             continue
 
         source_cfg = SCRAPER_CONFIGS.get(source_name, {})
-        if fetch_full_body or word_count((article.full_text or "").strip()) < 20:
+        if fetch_full_body or word_count(clean_article_text(article.full_text or "")) < 20:
             _ensure_primary_article_body(article, source_cfg)
 
-        related: list[Article] = []
-        if len(source_names) > 1:
-            related = _related_articles_for_cluster(article, cluster, max_related=1)
-            if fetch_full_body:
-                for related_article in related:
-                    related_cfg = SCRAPER_CONFIGS.get(
-                        related_article.source.name if related_article.source else "",
-                        {},
-                    )
-                    _ensure_primary_article_body(related_article, related_cfg)
+        related: list[Article] = list(
+            cluster.member_articles.exclude(pk=article.pk)
+            .select_related("source")[:MAX_RELATED_ARTICLES_FOR_SUMMARY]
+        )
+        if fetch_full_body:
+            for related_article in related:
+                related_cfg = SCRAPER_CONFIGS.get(
+                    related_article.source.name if related_article.source else "",
+                    {},
+                )
+                _ensure_primary_article_body(related_article, related_cfg)
 
-        source_material = gather_articles_for_summary(article, related, source_names)
+        source_material = gather_articles_for_summary(
+            article, related, source_names,
+        )
         if word_count(source_material) < 20:
             logger.warning(
                 "Insufficient source text for cluster %s (words=%d)",

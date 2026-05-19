@@ -87,6 +87,10 @@ COPY --from=builder /install /usr/local
 # Copy project code
 COPY --chown=app:app . .
 
+# Dev/prod: migrate before gunicorn when entrypoint is used
+COPY --chown=app:app docker/django-entrypoint.sh /app/docker/django-entrypoint.sh
+RUN chmod +x /app/docker/django-entrypoint.sh
+
 # Log dir, collect static for WhiteNoise + Gunicorn (no runserver static serving)
 RUN mkdir -p /var/log/celery /app/staticfiles \
 && python manage.py collectstatic --noinput \

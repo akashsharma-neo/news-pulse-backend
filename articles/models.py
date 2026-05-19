@@ -114,7 +114,15 @@ class Article(models.Model):
     full_text = models.TextField(
         blank=True,
         default="",
-        help_text="Full article body (truncated to ~2000 chars by scraper)",
+        help_text="Clean plain-text article body (up to ~8000 chars from scraper)",
+    )
+    topic_cluster = models.ForeignKey(
+        "TopicCluster",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="member_articles",
+        help_text="Story cluster this article belongs to (set by clustering pipeline)",
     )
     fetched_at = models.DateTimeField(auto_now_add=True)
     summary = models.TextField(
@@ -164,7 +172,7 @@ class TopicCluster(models.Model):
         help_text="The newest/most representative article in this cluster",
     )
     summary = models.TextField(
-        help_text="AI-generated unified summary (~60-80 words, InShorts style)",
+        help_text="AI-generated unified summary (~100-120 words, InShorts style)",
     )
     sources = models.JSONField(
         default=list,

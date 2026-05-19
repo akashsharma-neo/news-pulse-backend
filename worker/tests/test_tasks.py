@@ -321,13 +321,17 @@ class ClusterAndSummarizeTaskTest(TestCase):
         self.assertEqual(result["clusters_created"], 1)
         self.assertEqual(result["articles_clustered"], 1)
         self.assertEqual(TopicCluster.objects.count(), 1)
+        self.article.refresh_from_db()
+        self.assertIsNotNone(self.article.topic_cluster_id)
         mock_summarize.assert_called_once()
         mock_invalidate.assert_called_once()
 
     def test_no_unclustered_articles(self):
-        TopicCluster.objects.create(
+        cluster = TopicCluster.objects.create(
             topic_id=uuid.uuid4(), primary_article=self.article, summary="",
         )
+        self.article.topic_cluster = cluster
+        self.article.save(update_fields=["topic_cluster"])
         result = tasks.cluster_and_summarize()
         self.assertEqual(result["clusters_created"], 0)
 
@@ -338,14 +342,23 @@ class SummarizeClustersTaskTest(TestCase):
         self.src = Source.objects.create(
             name="BBC", url="https://bbc.com/feed", category=self.tab,
         )
+        body = (
+            "The government announced new policy measures today affecting transport and trade. "
+            "Officials said the changes would take effect immediately across major cities. "
+            "Opposition leaders criticized the timing while industry groups welcomed clarity. "
+            "Analysts noted the move could reshape regional supply chains over the coming months."
+        )
         self.article = Article.objects.create(
             title="Test", url="https://bbc.com/1", source=self.src,
-            published_at=timezone.now(), full_text=" ".join(["word"] * 100),
+            published_at=timezone.now(),
+            full_text=body,
         )
         self.cluster = TopicCluster.objects.create(
             topic_id=uuid.uuid4(), primary_article=self.article,
             summary="", sources=["BBC"],
         )
+        self.article.topic_cluster = self.cluster
+        self.article.save(update_fields=["topic_cluster"])
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
     def test_single_source_uses_fallback(self):
@@ -357,17 +370,32 @@ class SummarizeClustersTaskTest(TestCase):
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True, OPENAI_COMPATIBLE_API_KEY="sk-test")
     @patch("openai.OpenAI")
     def test_multi_source_calls_openai(self, mock_openai):
+        cnn_src = Source.objects.create(
+            name="CNN", url="https://cnn.com/feed", category=self.tab,
+        )
+        cnn_article = Article.objects.create(
+            title="Test story continues",
+            url="https://cnn.com/1",
+            source=cnn_src,
+            published_at=timezone.now(),
+            full_text=(
+                "Officials confirmed the same policy details in a briefing that outlined "
+                "economic impacts and regional implementation timelines for the new rules."
+            ),
+            topic_cluster=self.cluster,
+        )
         self.cluster.sources = ["BBC", "CNN"]
         self.cluster.save()
         mock_client = MagicMock()
         mock_openai.return_value = mock_client
         mock_client.chat.completions.create.return_value = MagicMock(
-            choices=[MagicMock(message=MagicMock(content=" ".join(["word"] * 45)))],
+            choices=[MagicMock(message=MagicMock(content=" ".join(["newsword"] * 95)))],
         )
         result = tasks.summarize_clusters()
         self.assertEqual(result["summarized"], 1)
         self.cluster.refresh_from_db()
-        self.assertTrue(len(self.cluster.summary.split()) >= 40)
+        self.assertGreaterEqual(len(self.cluster.summary.split()), 85)
+        del cnn_article
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
     def test_no_clusters_to_summarize(self):
