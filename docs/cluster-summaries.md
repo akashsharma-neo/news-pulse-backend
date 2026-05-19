@@ -13,7 +13,7 @@ Feed cards still show a **~60 word** client-side preview; detail shows the full 
 ## Pipeline flow
 
 1. **`scrape_source`** — RSS/listing text → optional detail fetch for thin bodies → `clean_article_text` → save `Article`.
-2. **`cluster_and_summarize`** — group unclustered articles (`topic_cluster IS NULL`), create `TopicCluster`, set `topic_cluster` on every member.
+2. **`cluster_and_summarize`** — group unclustered articles (`topic_cluster IS NULL`), create `TopicCluster` **or merge into a recent matching cluster in the same tab**, set `topic_cluster` on every member. See [feed-dedup.md](feed-dedup.md).
 3. **`summarize_clusters`** — gather primary + up to 4 member `full_text` rows → OpenAI (100–120 words) or sentence-boundary excerpt for single-source clusters.
 
 ## Text cleaning (The Hindu and paywalls)

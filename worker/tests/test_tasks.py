@@ -324,7 +324,7 @@ class ClusterAndSummarizeTaskTest(TestCase):
         mock_summarize.assert_not_called()
         mock_invalidate.assert_called_once()
 
-    @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, SUMMARIZE_ENABLED=True)
     @patch("worker.tasks.invalidate_cluster_feed_cache")
     @patch("worker.tasks.summarize_clusters.delay")
     def test_clusters_unclustered_articles(self, mock_summarize, mock_invalidate):
@@ -345,6 +345,37 @@ class ClusterAndSummarizeTaskTest(TestCase):
         self.article.save(update_fields=["topic_cluster"])
         result = tasks.cluster_and_summarize()
         self.assertEqual(result["clusters_created"], 0)
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, SUMMARIZE_ENABLED=False)
+    @patch("worker.tasks.invalidate_cluster_feed_cache")
+    @patch("worker.tasks.summarize_clusters.delay")
+    def test_merges_into_existing_cluster_instead_of_duplicate(
+        self, mock_summarize, mock_invalidate,
+    ):
+        existing = TopicCluster.objects.create(
+            topic_id=uuid.uuid4(),
+            primary_article=self.article,
+            summary="Already summarized",
+            sources=["S"],
+        )
+        self.article.topic_cluster = existing
+        self.article.save(update_fields=["topic_cluster"])
+
+        similar = Article.objects.create(
+            title="Test Story updated headline",
+            url="https://x.com/2",
+            source=self.src,
+            published_at=timezone.now(),
+            full_text="Some article body text for clustering again",
+            fetched_at=timezone.now(),
+        )
+        result = tasks.cluster_and_summarize()
+        similar.refresh_from_db()
+        self.assertEqual(result["clusters_created"], 0)
+        self.assertEqual(TopicCluster.objects.count(), 1)
+        self.assertEqual(similar.topic_cluster_id, existing.pk)
+        mock_summarize.assert_not_called()
+        mock_invalidate.assert_called_once()
 
 
 class SummarizeClustersTaskTest(TestCase):
