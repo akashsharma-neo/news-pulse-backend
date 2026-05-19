@@ -96,7 +96,7 @@ The browser calls the API on the **public API hostname** (`NEXT_PUBLIC_API_URL`)
 | `flower` | No | Do not expose to the internet (or VPN-only) |
 | `metabase` | No | Saves ~512MB–1GB RAM; use later if needed |
 
-Base reference: [docker-compose.yml](../docker-compose.yml) (dev). Production needs a separate **`docker-compose.prod.yml`** (not in repo yet — see checklist below).
+Base reference: [docker-compose.yml](../docker-compose.yml) (dev). Production uses [docker-compose.prod.yml](../docker-compose.prod.yml).
 
 ---
 
@@ -220,6 +220,170 @@ Full checklist: [production-security.md](production-security.md).
 2. **Celery beat:** run a single `celerybeat` container.
 3. **Post-deploy checks:** Swagger 404, CORS preflight, `/health/`, no public Postgres/Redis — see [production-security.md](production-security.md).
 4. **Backups:** daily `pg_dump` to S3 via cron, or weekly EBS snapshots; retain ~7 days and test a restore once.
+
+---
+
+## Deploy cheatsheet (logs & debugging)
+
+Run these on the EC2 instance from the app directory (default **`/opt/newspulse`**). Replace domains with your `CADDY_DOMAIN_*` values.
+
+### Access the box
+
+```bash
+# SSH (if port 22 open)
+ssh -i your-key.pem ec2-user@<elastic-ip>
+
+# Or SSM (no SSH) — from laptop with AWS CLI
+aws ssm start-session --target <instance-id> --region ap-south-1
+```
+
+### Stack status
+
+```bash
+cd /opt/newspulse
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml ps -a    # include exited
+docker stats --no-stream                            # CPU/RAM per container
+df -h                                             # disk (Postgres + model cache)
+free -h                                           # host memory
+```
+
+| Container | Role |
+|-----------|------|
+| `np-caddy` | TLS + routes `www` → frontend, `api` → django |
+| `np-frontend` | Next.js |
+| `np-django` | Gunicorn / Django |
+| `np-celery` | Worker (`celery`, `digest` queues) |
+| `np-celerybeat` | Scheduled tasks (exactly one) |
+| `np-celery-embeddings` | Optional (`--profile embeddings`) |
+| `np-postgres` | Postgres 17 + pgvector |
+| `np-redis` | Broker + cache |
+
+### Read logs
+
+```bash
+COMPOSE="docker compose -f docker-compose.prod.yml"
+
+# All services (last 100 lines, follow)
+$COMPOSE logs --tail=100
+$COMPOSE logs -f
+
+# One service (compose name)
+$COMPOSE logs -f django
+$COMPOSE logs -f caddy
+$COMPOSE logs -f celery
+$COMPOSE logs -f celerybeat
+$COMPOSE logs -f frontend
+
+# By container name (same containers, explicit)
+docker logs -f --tail=200 np-django
+docker logs -f --tail=200 np-caddy
+docker logs -f --tail=200 np-celery
+docker logs -f --tail=200 np-celerybeat
+docker logs -f --tail=200 np-frontend
+docker logs -f --tail=200 np-postgres
+docker logs -f --tail=200 np-redis
+```
+
+Celery also writes files inside the worker container:
+
+```bash
+docker exec np-celery tail -f /var/log/celery/worker.log
+docker exec np-celerybeat tail -f /var/log/celery/beat.log
+```
+
+### Quick health checks (from EC2 or laptop)
+
+```bash
+# Load .env for hostnames
+source /opt/newspulse/.env
+
+curl -fsS "https://${CADDY_DOMAIN_API}/health/" && echo OK
+curl -fsS "https://${CADDY_DOMAIN_WWW}/" -o /dev/null && echo OK
+
+# Full scripted checks
+./deploy/smoke-test.sh
+```
+
+From **inside** the compose network (bypasses Caddy/DNS):
+
+```bash
+docker exec np-django curl -fsS http://127.0.0.1:8000/health/
+docker exec np-frontend wget -qO- http://127.0.0.1:3000/ | head
+```
+
+### Django / database
+
+```bash
+docker exec -it np-django python manage.py check
+docker exec np-django python manage.py migrate --plan
+docker exec np-django python manage.py migrate --noinput
+docker exec -it np-django python manage.py createsuperuser
+docker exec -it np-django python manage.py shell
+
+# Postgres shell
+docker exec -it np-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+# (or set user/db from .env: newspulse / newspulse)
+
+docker exec np-redis redis-cli ping
+```
+
+### Celery
+
+```bash
+docker exec np-celery celery -A core inspect ping
+docker exec np-celery celery -A core inspect active
+docker exec np-celery celery -A core inspect registered
+```
+
+Pipeline details: [celery-pipeline.md](celery-pipeline.md).
+
+### Restart / redeploy
+
+```bash
+cd /opt/newspulse
+./deploy/deploy.sh                    # ECR login, pull, up, migrate
+
+# Restart one service without full deploy
+docker compose -f docker-compose.prod.yml restart django
+docker compose -f docker-compose.prod.yml restart caddy celery celerybeat
+
+# Recreate after .env change (no new image)
+docker compose -f docker-compose.prod.yml up -d --force-recreate django celery celerybeat caddy
+```
+
+### Common problems
+
+| Symptom | What to check |
+|---------|----------------|
+| **502 / 521 (Cloudflare)** | `docker ps` — is `np-caddy` up? SG allows 80/443? DNS A records → Elastic IP? |
+| **SSL / certificate errors** | `docker logs np-caddy` — ACME failures? `CADDY_DOMAIN_*` must match DNS. Cloudflare SSL = **Full (strict)**. Ports 80+443 must reach EC2 for HTTP-01. |
+| **`pull access denied` / ECR** | Instance IAM role has ECR pull policy; `aws ecr get-login-password \| docker login …`; `ECR_*_IMAGE` URIs match region/account. |
+| **502 from Caddy, django healthy** | `docker logs np-caddy`; confirm `np-django` / `np-frontend` are running and on the same compose network. |
+| **API 400 / DisallowedHost** | `.env`: `DJANGO_ALLOWED_HOSTS=api.yourdomain.com` (no scheme, no trailing slash). |
+| **CORS errors in browser** | `CORS_ALLOWED_ORIGINS=https://www.yourdomain.com` must match the **www** origin exactly. |
+| **Frontend hits wrong API** | `NEXT_PUBLIC_API_URL` is **build-time** — rebuild and push `newspulse-web`, then `./deploy/deploy.sh`. |
+| **Migrations failed** | `docker logs np-django`; run `docker exec np-django python manage.py migrate --noinput` manually. |
+| **Celery tasks not running** | `docker logs np-celery`, `np-celerybeat`; `celery inspect ping`; Redis: `docker exec np-redis redis-cli ping`. |
+| **Out of memory / OOM** | `dmesg \| tail`; `docker stats`; disable embeddings or upgrade to `t4g.medium`. |
+| **Disk full** | `df -h`; `docker system df`; prune old images: `docker image prune -a` (careful on prod). |
+
+### Inspect config (safe)
+
+```bash
+cd /opt/newspulse
+grep -E '^(CADDY_|DJANGO_ALLOWED|CORS_|BASE_URL|ECR_|NEXT_PUBLIC)' .env
+docker compose -f docker-compose.prod.yml config   # resolved compose (no secrets printed from env_file)
+```
+
+### ECR / image debugging
+
+```bash
+source /opt/newspulse/.env
+aws ecr describe-images --repository-name newspulse-api --region "$AWS_REGION" --query 'imageDetails[*].imageTags' --output table
+docker images | grep newspulse
+docker inspect np-django --format '{{.Config.Image}}'
+```
 
 ---
 

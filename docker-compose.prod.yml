@@ -6,7 +6,7 @@
 #
 # Required in .env on the server:
 #   ECR_API_IMAGE, ECR_WEB_IMAGE  (full ECR URIs including tag)
-#   CADDY_DOMAIN_WWW, CADDY_DOMAIN_API
+#   CADDY_DOMAIN_WWW, CADDY_DOMAIN_API, CADDY_ACME_EMAIL
 #
 # Usage (on EC2 after ECR login):
 #   docker compose -f docker-compose.prod.yml pull
@@ -196,6 +196,7 @@ services:
     environment:
       CADDY_DOMAIN_WWW: ${CADDY_DOMAIN_WWW:?set CADDY_DOMAIN_WWW}
       CADDY_DOMAIN_API: ${CADDY_DOMAIN_API:?set CADDY_DOMAIN_API}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?set CADDY_ACME_EMAIL}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

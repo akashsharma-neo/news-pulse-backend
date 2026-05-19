@@ -2,6 +2,8 @@
 
 Scripts and config for [AWS deployment](../docs/aws-deployment.md) (EC2 + Compose + ECR + Cloudflare).
 
+**Day-2 ops:** [Deploy cheatsheet](../docs/aws-deployment.md#deploy-cheatsheet-logs--debugging) — logs, health checks, Celery, common failures.
+
 ## Quick path
 
 | Step | Action |
