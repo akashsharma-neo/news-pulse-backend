@@ -93,5 +93,17 @@ cd /opt/newspulse && ./deploy/deploy.sh
 | `Set repository variable NEXT_PUBLIC_API_URL` | Frontend repo → Variables → `NEXT_PUBLIC_API_URL`. |
 | `pull access denied` on EC2 | EC2 instance IAM role needs ECR pull; run `deploy.sh` after CI succeeds. |
 | Build slow / OOM on API image | Normal for torch build; re-run workflow if GitHub runner flakes. |
+| `apt-get` exit **255** on `gcc` / `libpq-dev` | Cross-building arm64 on x86 without QEMU. Workflows use **`ubuntu-24.04-arm`**. Private repo without arm runners: use `ubuntu-22.04` + `docker/setup-qemu-action@v3` before Buildx (see below). |
+
+### Private repo: fallback runner (if `ubuntu-24.04-arm` is unavailable)
+
+In `.github/workflows/deploy-ecr.yml`:
+
+```yaml
+runs-on: ubuntu-22.04
+# ...
+- uses: docker/setup-qemu-action@v3
+- uses: docker/setup-buildx-action@v3
+```
 
 See also [deploy/README.md](../deploy/README.md) and [aws-deployment.md](aws-deployment.md).
