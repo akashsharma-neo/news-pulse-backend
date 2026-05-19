@@ -23,8 +23,13 @@ from celery.utils.log import get_task_logger
 from django.utils import timezone as dj_timezone
 from feedparser import parse as parse_rss
 
+from articles.cluster_dedup import (
+    find_matching_topic_cluster,
+    merge_articles_into_cluster,
+)
 from articles.image_resolver import extract_rss_image, extract_web_image, pick_cluster_image
 from articles.models import Article, Source, Tab, TopicCluster
+from articles.url_utils import article_exists_for_url, normalize_article_url
 from worker.article_content import (
     MAX_RELATED_ARTICLES_FOR_SUMMARY,
     MIN_BODY_WORDS,
@@ -340,7 +345,7 @@ def scrape_source(self, source_id: int) -> dict:
 
         new_articles = [
             ad for ad in articles_data
-            if not Article.objects.filter(url=ad["url"]).exists()
+            if not article_exists_for_url(ad["url"])
         ]
         skipped = fetched - len(new_articles)
 
@@ -368,7 +373,7 @@ def scrape_source(self, source_id: int) -> dict:
 
             Article.objects.create(
                 title=article_data["title"][:1000],
-                url=article_data["url"][:2048],
+                url=normalize_article_url(article_data["url"])[:2048],
                 source=source,
                 full_text=content,
                 published_at=pub_at,
@@ -592,6 +597,23 @@ def cluster_and_summarize() -> dict:
             # Primary article = newest in cluster
             primary = max(cluster_articles, key=lambda a: a.published_at or a.fetched_at)
 
+            existing = find_matching_topic_cluster(
+                primary,
+                category_slug=cat_slug,
+                title_similarity=_title_similarity,
+            )
+            if existing:
+                merge_articles_into_cluster(existing, cluster_articles)
+                total_clustered += len(cluster_articles)
+                logger.info(
+                    "Merged %d article(s) into existing cluster %s (tab=%s) primary='%s'",
+                    len(cluster_articles),
+                    existing.pk,
+                    cat_slug,
+                    primary.title[:60],
+                )
+                continue
+
             # Collect source names
             source_names = list(set(
                 a.source.name for a in cluster_articles if a.source
@@ -619,10 +641,10 @@ def cluster_and_summarize() -> dict:
                 cat_slug, len(cluster_articles), primary.title[:60],
             )
 
-    if total_clusters > 0:
+    if total_clusters > 0 or total_clustered > 0:
         from django.conf import settings
 
-        if settings.SUMMARIZE_ENABLED:
+        if settings.SUMMARIZE_ENABLED and total_clusters > 0:
             summarize_clusters.delay()
         invalidate_cluster_feed_cache()
 
