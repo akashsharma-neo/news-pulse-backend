@@ -9,7 +9,8 @@
   - **Cluster articles now** — queues `worker.tasks.cluster_and_summarize` (groups unclustered articles from the last 48h into `TopicCluster` rows for the feed)
 - The **Topic clusters** changelist (`/admin/articles/topiccluster/`) additionally shows:
   - **Summarization** — count of clusters with empty `summary`
-  - **Summarize clusters now** — queues `worker.tasks.summarize_clusters` via Celery
+  - **Mark pending summaries done** — fills empty summaries from article excerpts (no LLM; sync)
+  - **Summarize clusters now (LLM)** — queues `worker.tasks.summarize_clusters` via Celery (hidden when `SUMMARIZE_ENABLED=false`)
 
 ## Run scrape from admin
 
@@ -26,7 +27,7 @@ If queuing fails, confirm the Celery worker is running and `CELERY_BROKER_URL` /
 
 1. Open `/admin/articles/article/` and check **Unclustered (48h)** in pipeline totals.
 2. Click **Cluster articles now** to queue `cluster_and_summarize`.
-3. New clusters dispatch `summarize_clusters` automatically. Use **Summarize clusters now** on the Topic clusters changelist if summaries are still empty.
+3. When `SUMMARIZE_ENABLED=true`, new clusters dispatch `summarize_clusters` automatically. Locally (`SUMMARIZE_ENABLED=false`), use **Mark pending summaries done** on the Topic clusters changelist instead of LLM summarization.
 
 Beat must include `cluster-every-hour` in `CELERY_BEAT_SCHEDULE` (`core/settings.py`). After changing the schedule, restart Beat: `docker compose restart celerybeat`.
 

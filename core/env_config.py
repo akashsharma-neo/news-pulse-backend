@@ -27,6 +27,7 @@ PROFILES: dict[str, dict[str, str]] = {
         "SUMMARIZE_BATCH_SIZE": "50",
         "SUMMARIZE_DELAY_SEC": "0",
         "SUMMARIZE_FETCH_FULL_BODY": "true",
+        "SUMMARIZE_ENABLED": "false",
         "EMBEDDINGS_ENABLED": "false",
     },
     "staging": {

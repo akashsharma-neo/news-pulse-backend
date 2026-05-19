@@ -620,7 +620,10 @@ def cluster_and_summarize() -> dict:
             )
 
     if total_clusters > 0:
-        summarize_clusters.delay()
+        from django.conf import settings
+
+        if settings.SUMMARIZE_ENABLED:
+            summarize_clusters.delay()
         invalidate_cluster_feed_cache()
 
     total_leftover = len(articles) - total_clustered
@@ -704,6 +707,10 @@ def summarize_clusters(self) -> dict:
     Returns {"summarized": N, "skipped": N}.
     """
     from django.conf import settings
+
+    if not settings.SUMMARIZE_ENABLED:
+        logger.info("Summarization disabled (SUMMARIZE_ENABLED=false)")
+        return {"summarized": 0, "skipped": 0, "disabled": True}
 
     summarize_batch_size = settings.SUMMARIZE_BATCH_SIZE
     summarize_delay_sec = settings.SUMMARIZE_DELAY_SEC

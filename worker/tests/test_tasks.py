@@ -313,6 +313,17 @@ class ClusterAndSummarizeTaskTest(TestCase):
             fetched_at=timezone.now(),
         )
 
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, SUMMARIZE_ENABLED=False)
+    @patch("worker.tasks.invalidate_cluster_feed_cache")
+    @patch("worker.tasks.summarize_clusters.delay")
+    def test_clusters_unclustered_skips_summarize_when_disabled(
+        self, mock_summarize, mock_invalidate,
+    ):
+        result = tasks.cluster_and_summarize()
+        self.assertEqual(result["clusters_created"], 1)
+        mock_summarize.assert_not_called()
+        mock_invalidate.assert_called_once()
+
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
     @patch("worker.tasks.invalidate_cluster_feed_cache")
     @patch("worker.tasks.summarize_clusters.delay")
@@ -396,6 +407,14 @@ class SummarizeClustersTaskTest(TestCase):
         self.cluster.refresh_from_db()
         self.assertGreaterEqual(len(self.cluster.summary.split()), 85)
         del cnn_article
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, SUMMARIZE_ENABLED=False)
+    def test_summarize_disabled(self):
+        result = tasks.summarize_clusters()
+        self.assertTrue(result.get("disabled"))
+        self.assertEqual(result["summarized"], 0)
+        self.cluster.refresh_from_db()
+        self.assertEqual(self.cluster.summary, "")
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
     def test_no_clusters_to_summarize(self):

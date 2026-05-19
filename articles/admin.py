@@ -12,7 +12,10 @@ from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 from django.utils import timezone
 
+from django.conf import settings
+
 from core.admin_mixins import TotalCountChangeListMixin
+from articles.cluster_summary import mark_pending_cluster_summaries
 from .models import Tab, Source, Article, TopicCluster
 
 
@@ -179,6 +182,11 @@ class TopicClusterAdmin(TotalCountChangeListMixin, admin.ModelAdmin):
                 self.admin_site.admin_view(self.summarize_clusters_view),
                 name="articles_topiccluster_summarize_clusters",
             ),
+            path(
+                "mark-summaries-done/",
+                self.admin_site.admin_view(self.mark_summaries_done_view),
+                name="articles_topiccluster_mark_summaries_done",
+            ),
         ]
         return custom_urls + urls
 
@@ -187,6 +195,7 @@ class TopicClusterAdmin(TotalCountChangeListMixin, admin.ModelAdmin):
         extra_context["pending_summaries"] = TopicCluster.objects.filter(
             summary=""
         ).count()
+        extra_context["summarize_enabled"] = settings.SUMMARIZE_ENABLED
         return super().changelist_view(request, extra_context)
 
     def summarize_clusters_view(self, request):
@@ -198,6 +207,14 @@ class TopicClusterAdmin(TotalCountChangeListMixin, admin.ModelAdmin):
         if not self.has_change_permission(request):
             messages.error(
                 request, "You do not have permission to run summarization."
+            )
+            return HttpResponseRedirect(changelist_url)
+
+        if not settings.SUMMARIZE_ENABLED:
+            messages.warning(
+                request,
+                "LLM summarization is disabled (SUMMARIZE_ENABLED=false). "
+                "Use “Mark pending summaries done” to fill excerpts without an API call.",
             )
             return HttpResponseRedirect(changelist_url)
 
@@ -221,6 +238,35 @@ class TopicClusterAdmin(TotalCountChangeListMixin, admin.ModelAdmin):
                 f"Failed to queue summarization: {exc}. "
                 "Ensure the Celery worker and Redis broker are running.",
             )
+
+        return HttpResponseRedirect(changelist_url)
+
+    def mark_summaries_done_view(self, request):
+        changelist_url = reverse("admin:articles_topiccluster_changelist")
+
+        if request.method != "POST":
+            return HttpResponseRedirect(changelist_url)
+
+        if not self.has_change_permission(request):
+            messages.error(
+                request,
+                "You do not have permission to mark summaries done.",
+            )
+            return HttpResponseRedirect(changelist_url)
+
+        pending = TopicCluster.objects.filter(summary="").count()
+        if pending == 0:
+            messages.info(request, "No clusters with empty summaries.")
+            return HttpResponseRedirect(changelist_url)
+
+        try:
+            updated = mark_pending_cluster_summaries()
+            messages.success(
+                request,
+                f"Marked {updated} cluster(s) done using article excerpts (no LLM).",
+            )
+        except Exception as exc:
+            messages.error(request, f"Failed to mark summaries done: {exc}")
 
         return HttpResponseRedirect(changelist_url)
 

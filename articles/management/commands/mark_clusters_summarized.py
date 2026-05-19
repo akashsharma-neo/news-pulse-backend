@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
+from articles.cluster_summary import mark_pending_cluster_summaries
 from articles.models import TopicCluster
-from worker.article_content import fallback_summary_from_article
 
 
 class Command(BaseCommand):
@@ -23,19 +23,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
-        qs = TopicCluster.objects.filter(summary="").select_related(
-            "primary_article",
-        )
+        pending = TopicCluster.objects.filter(summary="").count()
+        if dry_run:
+            self.stdout.write(self.style.SUCCESS(f"Would update {pending} cluster(s)."))
+            return
 
-        updated = 0
-        for cluster in qs.iterator():
-            summary = fallback_summary_from_article(cluster.primary_article)
-            if dry_run:
-                updated += 1
-                continue
-            cluster.summary = summary
-            cluster.save(update_fields=["summary"])
-            updated += 1
-
-        verb = "Would update" if dry_run else "Updated"
-        self.stdout.write(self.style.SUCCESS(f"{verb} {updated} cluster(s)."))
+        updated = mark_pending_cluster_summaries()
+        self.stdout.write(self.style.SUCCESS(f"Updated {updated} cluster(s)."))

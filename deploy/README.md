@@ -18,14 +18,19 @@ Scripts and config for [AWS deployment](../docs/aws-deployment.md) (EC2 + Compos
 
 ## GitHub Actions
 
-**Backend repo** (`.github/workflows/deploy-ecr.yml`): builds and pushes `newspulse-api` (linux/arm64).
+**Branch flow:** work on `dev` → PR to `main` → **merge** triggers ECR build (push to `main` only; not on `dev`).
 
-**Frontend repo** (`.github/workflows/deploy-ecr.yml`): builds and pushes `newspulse-web`.
+**Setup (one-time):** [github-actions-ecr.md](../docs/github-actions-ecr.md) — IAM user, secrets, variables, first merge.
+
+| Repo | Workflow | Image |
+|------|----------|--------|
+| Backend | `.github/workflows/deploy-ecr.yml` | `newspulse-api` (linux/arm64) |
+| Frontend | `.github/workflows/deploy-ecr.yml` | `newspulse-web` (linux/arm64) |
 
 **Secrets** (both repos): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
 
-**Variables** (frontend repo): `NEXT_PUBLIC_API_URL` = `https://api.yourdomain.com/api`  
-**Variables** (optional both): `AWS_REGION` = `ap-south-1` (Asia Pacific — Mumbai)
+**Variables** (frontend): `NEXT_PUBLIC_API_URL` = `https://api.yourdomain.com/api`  
+**Variables** (optional both): `AWS_REGION` = `ap-south-1`
 
 **Optional** (backend): `deploy-ssm.yml` — workflow_dispatch with `instance_id` to run `deploy.sh` via SSM.
 

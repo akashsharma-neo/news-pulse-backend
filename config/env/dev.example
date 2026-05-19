@@ -24,7 +24,8 @@ DJANGO_SECRET_KEY=dev-insecure-change-me
 # BASE_URL=http://localhost:8000
 # CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3000
 
-# Summarization (local model — no OpenRouter rate limits)
+# Summarization — off locally to save LLM calls; use admin “Mark pending summaries done”
+SUMMARIZE_ENABLED=false
 SUMMARIZE_BATCH_SIZE=50
 SUMMARIZE_DELAY_SEC=0
 

@@ -42,6 +42,10 @@ python manage.py reclean_article_bodies --resummarize
 
 # Fill empty summaries from article text without LLM (admin alternative)
 python manage.py mark_clusters_summarized
+
+# One-time local cleanup — keep only today's articles and clusters
+python manage.py prune_stale_content
+python manage.py prune_stale_content --dry-run
 ```
 
 After deploy, for existing data:
@@ -55,6 +59,7 @@ After deploy, for existing data:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
+| `SUMMARIZE_ENABLED` | `true` (`false` in dev profile) | When false, Beat and clustering skip LLM; use admin or `mark_clusters_summarized` |
 | `SUMMARIZE_MAX_TOKENS` | `250` | Headroom for 100–120 word digests |
 | `SUMMARIZE_FETCH_FULL_BODY` | `false` | Re-fetch thin bodies at summarize time |
 

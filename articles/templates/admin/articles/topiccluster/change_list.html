@@ -3,11 +3,19 @@
 
 {% block object-tools-items %}
   <li>
-    <form method="post" action="{% url 'admin:articles_topiccluster_summarize_clusters' %}" style="display: inline;">
+    <form method="post" action="{% url 'admin:articles_topiccluster_mark_summaries_done' %}" style="display: inline;">
       {% csrf_token %}
-      <button type="submit" class="button">{% translate "Summarize clusters now" %}</button>
+      <button type="submit" class="button">{% translate "Mark pending summaries done" %}</button>
     </form>
   </li>
+  {% if summarize_enabled %}
+  <li>
+    <form method="post" action="{% url 'admin:articles_topiccluster_summarize_clusters' %}" style="display: inline;">
+      {% csrf_token %}
+      <button type="submit" class="button">{% translate "Summarize clusters now (LLM)" %}</button>
+    </form>
+  </li>
+  {% endif %}
   {{ block.super }}
 {% endblock %}
 
@@ -17,9 +25,12 @@
       <strong>{% translate "Summarization" %}</strong>
       <p style="margin: 8px 0 0;">
         {% if pending_summaries == 1 %}
-          {% translate "1 cluster awaiting AI summary." %}
+          {% translate "1 cluster with an empty summary." %}
         {% else %}
-          {% blocktranslate %}{{ pending_summaries }} clusters awaiting AI summary.{% endblocktranslate %}
+          {% blocktranslate %}{{ pending_summaries }} clusters with empty summaries.{% endblocktranslate %}
+        {% endif %}
+        {% if not summarize_enabled %}
+          {% translate " LLM summarization is off locally — use “Mark pending summaries done” for excerpts." %}
         {% endif %}
       </p>
     </div>

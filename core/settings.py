@@ -213,6 +213,9 @@ SUMMARIZE_MAX_TOKENS = int(os.environ.get('SUMMARIZE_MAX_TOKENS', '250'))
 SUMMARIZE_FETCH_FULL_BODY = os.environ.get(
     'SUMMARIZE_FETCH_FULL_BODY', 'false'
 ).lower() in ('true', '1', 'yes')
+SUMMARIZE_ENABLED = os.environ.get('SUMMARIZE_ENABLED', 'true').lower() in (
+    'true', '1', 'yes'
+)
 
 EMBEDDINGS_ENABLED = os.environ.get('EMBEDDINGS_ENABLED', 'false').lower() in (
     'true', '1', 'yes'
@@ -280,15 +283,17 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'worker.tasks.cluster_and_summarize',
         'schedule': 3600,  # 1 hour safety net for unclustered articles
     },
-    'summarize-clusters': {
-        'task': 'worker.tasks.summarize_clusters',
-        'schedule': 3600,  # every hour as backup
-    },
     'daily-digest': {
         'task': 'digest.tasks.generate_daily_digest_task',
         'schedule': 86400,  # every 24 hours
     },
 }
+
+if SUMMARIZE_ENABLED:
+    CELERY_BEAT_SCHEDULE['summarize-clusters'] = {
+        'task': 'worker.tasks.summarize_clusters',
+        'schedule': 3600,  # every hour as backup
+    }
 
 if EMBEDDINGS_ENABLED:
     CELERY_BEAT_SCHEDULE['embed-every-2-hours'] = {
