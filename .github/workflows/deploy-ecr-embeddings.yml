@@ -1,10 +1,8 @@
-# Build and push API image to ECR when changes land on main (e.g. merge PR dev → main).
-# Does not run on pushes to dev or other branches.
-name: Build and push API to ECR
+# Optional embeddings image (PyTorch CPU + sentence-transformers). Not built on every merge.
+# Prod runs with EMBEDDINGS_ENABLED=false — use this only if you enable the embeddings profile.
+name: Build and push embeddings image to ECR
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       image_tag:
@@ -13,17 +11,15 @@ on:
         type: string
 
 concurrency:
-  group: ecr-api-${{ github.ref }}
+  group: ecr-api-embeddings
   cancel-in-progress: true
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
-  ECR_API_REPO: newspulse-api
+  ECR_EMBEDDINGS_REPO: newspulse-api-embeddings
 
 jobs:
-  build-api:
-    # EC2 is ARM (t4g). ubuntu-22.04 + QEMU avoids apt-get exit 255 on ubuntu-latest/24.04.
-    # Public repos can switch to runs-on: ubuntu-24.04-arm and drop setup-qemu for faster native builds.
+  build-embeddings:
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -46,9 +42,9 @@ jobs:
 
       - name: Ensure ECR repository exists
         run: |
-          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_API_REPO }}" --region "${{ env.AWS_REGION }}" 2>/dev/null; then
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_EMBEDDINGS_REPO }}" --region "${{ env.AWS_REGION }}" 2>/dev/null; then
             aws ecr create-repository \
-              --repository-name "${{ env.ECR_API_REPO }}" \
+              --repository-name "${{ env.ECR_EMBEDDINGS_REPO }}" \
               --region "${{ env.AWS_REGION }}" \
               --image-scanning-configuration scanOnPush=true
           fi
@@ -64,23 +60,23 @@ jobs:
           if [[ -z "$TAG" ]]; then TAG="${{ github.sha }}"; fi
           REGISTRY="${{ steps.ecr.outputs.registry }}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "api_image=${REGISTRY}/${{ env.ECR_API_REPO }}:${TAG}" >> "$GITHUB_OUTPUT"
-          echo "api_latest=${REGISTRY}/${{ env.ECR_API_REPO }}:latest" >> "$GITHUB_OUTPUT"
+          echo "embeddings_image=${REGISTRY}/${{ env.ECR_EMBEDDINGS_REPO }}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "embeddings_latest=${REGISTRY}/${{ env.ECR_EMBEDDINGS_REPO }}:latest" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push API image (linux/arm64, slim runtime)
+      - name: Build and push embeddings image (linux/arm64)
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: runtime
+          target: embeddings
           push: true
           tags: |
-            ${{ steps.meta.outputs.api_image }}
-            ${{ steps.meta.outputs.api_latest }}
+            ${{ steps.meta.outputs.embeddings_image }}
+            ${{ steps.meta.outputs.embeddings_latest }}
           platforms: linux/arm64
           provenance: false
 
       - name: Summary
         run: |
-          echo "### API image pushed" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${{ steps.meta.outputs.api_image }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${{ steps.meta.outputs.api_latest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Embeddings image pushed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ steps.meta.outputs.embeddings_image }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ steps.meta.outputs.embeddings_latest }}\`" >> "$GITHUB_STEP_SUMMARY"

@@ -24,8 +24,11 @@ Scripts and config for [AWS deployment](../docs/aws-deployment.md) (EC2 + Compos
 
 | Repo | Workflow | Image |
 |------|----------|--------|
-| Backend | `.github/workflows/deploy-ecr.yml` | `newspulse-api` (linux/arm64) |
+| Backend | `.github/workflows/deploy-ecr.yml` | `newspulse-api` slim runtime (linux/arm64) |
+| Backend (optional) | `.github/workflows/deploy-ecr-embeddings.yml` | `newspulse-api-embeddings` — manual only |
 | Frontend | `.github/workflows/deploy-ecr.yml` | `newspulse-web` (linux/arm64) |
+
+See [docker-images.md](../docs/docker-images.md) — prod does not include PyTorch/CUDA.
 
 **Secrets** (both repos): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
 

@@ -25,13 +25,14 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING
 
-import numpy as np
 from django.db import transaction
-from tqdm.auto import tqdm
 
 from articles.models import Article
+
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,14 @@ def _get_model(model_name: str = "all-mpnet-base-v2"):
         A ``SentenceTransformer`` instance ready for inference.
     """
     if model_name not in _MODEL_CACHE:
-        from sentence_transformers import SentenceTransformer
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise ImportError(
+                "sentence-transformers is not installed. Use the Docker target "
+                "'embeddings', install requirements-embeddings.txt (see file header), or "
+                "docker compose --profile embeddings up celery-embeddings."
+            ) from exc
 
         logger.info("Loading embedding model '%s' …", model_name)
         _MODEL_CACHE[model_name] = SentenceTransformer(model_name)
@@ -90,7 +98,7 @@ def embed_texts(
     texts: list[str],
     model_name: str = "all-mpnet-base-v2",
     batch_size: int = 64,
-) -> np.ndarray:
+) -> "np.ndarray":
     """Batch-encode a list of texts into embedding vectors.
 
     Args:

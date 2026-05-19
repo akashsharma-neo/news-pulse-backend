@@ -92,8 +92,9 @@ cd /opt/newspulse && ./deploy/deploy.sh
 | `Credentials could not be loaded` | Add `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets. |
 | `Set repository variable NEXT_PUBLIC_API_URL` | Frontend repo → Variables → `NEXT_PUBLIC_API_URL`. |
 | `pull access denied` on EC2 | EC2 instance IAM role needs ECR pull; run `deploy.sh` after CI succeeds. |
-| Build slow / OOM on API image | Normal for torch build; re-run workflow if GitHub runner flakes. |
-| `apt-get` exit **255** on `gcc` / `libpq-dev` | Cross-building arm64 on x86 without QEMU. Workflows use **`ubuntu-24.04-arm`**. Private repo without arm runners: use `ubuntu-22.04` + `docker/setup-qemu-action@v3` before Buildx (see below). |
+| Build slow / OOM on API image | Slim `runtime` image has no torch; should be much faster. Re-run if runner flakes. |
+| CUDA / `nvidia-*` packages in build log | Old image bundled embeddings. Main CI builds **`target: runtime`** only — no torch. Optional ML image: `deploy-ecr-embeddings.yml`. |
+| `apt-get` exit **255** on `gcc` / `libpq-dev` | Cross-building arm64 on x86 without QEMU. Workflows use **`ubuntu-22.04`** + `docker/setup-qemu-action@v3` before Buildx. |
 
 ### Private repo: fallback runner (if `ubuntu-24.04-arm` is unavailable)
 

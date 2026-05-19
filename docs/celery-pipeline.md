@@ -232,7 +232,7 @@ The default worker uses `-Q celery,digest` (no `embeddings` queue — keeps PyTo
 
 - **celery** — scrape, cluster, summarize (time-sensitive)
 - **digest** — daily email digest
-- **embeddings** — optional; start `docker compose --profile embeddings up celery-embeddings` with `EMBEDDINGS_ENABLED=true` on that service (`CELERY_TASK_ROUTES` in `core/settings.py`)
+- **embeddings** — optional; uses Docker target `embeddings` (`docker compose --profile embeddings up celery-embeddings`). See [docker-images.md](docker-images.md).
 
 Embedding work should not block scrapes on the default queue.
 

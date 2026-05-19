@@ -7,6 +7,8 @@ NEWSMINE_ENV=prod
 AWS_REGION=ap-south-1
 ECR_API_IMAGE=123456789012.dkr.ecr.ap-south-1.amazonaws.com/newspulse-api:latest
 ECR_WEB_IMAGE=123456789012.dkr.ecr.ap-south-1.amazonaws.com/newspulse-web:latest
+# Only if using compose profile embeddings (see docs/docker-images.md):
+# ECR_EMBEDDINGS_IMAGE=123456789012.dkr.ecr.ap-south-1.amazonaws.com/newspulse-api-embeddings:latest
 
 # Caddy / DNS (must match Cloudflare records)
 CADDY_DOMAIN_WWW=www.yourdomain.com

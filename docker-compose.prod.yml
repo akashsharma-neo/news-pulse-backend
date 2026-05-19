@@ -111,7 +111,6 @@ services:
       --logfile=/var/log/celery/worker.log
     volumes:
       - celery_logs:/var/log/celery
-      - model_cache:/data/embeddings-models
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,7 +125,7 @@ services:
   celery-embeddings:
     <<: *app-env
     profiles: [embeddings]
-    image: ${ECR_API_IMAGE}
+    image: ${ECR_EMBEDDINGS_IMAGE:?set ECR_EMBEDDINGS_IMAGE when using embeddings profile}
     container_name: np-celery-embeddings
     restart: unless-stopped
     command: >

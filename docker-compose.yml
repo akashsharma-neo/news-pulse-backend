@@ -21,6 +21,14 @@
 # See docs/environments.md.
 # ===========================
 
+x-app-build: &app-build
+  context: .
+  target: runtime
+
+x-embeddings-build: &embeddings-build
+  context: .
+  target: embeddings
+
 x-app-env: &app-env
   env_file:
     - .env
@@ -103,7 +111,7 @@ services:
 
   django:
     <<: *app-env
-    build: .
+    build: *app-build
     container_name: np-django
     restart: unless-stopped
     entrypoint: ["/app/docker/django-entrypoint.sh"]
@@ -126,7 +134,7 @@ services:
 
   celery:
     <<: *app-env
-    build: .
+    build: *app-build
     container_name: np-celery
     restart: unless-stopped
     command: >
@@ -145,7 +153,6 @@ services:
       - ./digest:/app/digest
       - ./users:/app/users
       - celery_logs:/var/log/celery
-      - model_cache:/data/embeddings-models
     depends_on:
       postgres:
         condition: service_healthy
@@ -162,7 +169,7 @@ services:
   celery-embeddings:
     <<: *app-env
     profiles: [embeddings]
-    build: .
+    build: *embeddings-build
     container_name: np-celery-embeddings
     restart: unless-stopped
     command: >
@@ -188,7 +195,7 @@ services:
 
   celerybeat:
     <<: *app-env
-    build: .
+    build: *app-build
     container_name: np-celerybeat
     restart: unless-stopped
     command: >
@@ -216,7 +223,7 @@ services:
       start_period: 30s
 
   flower:
-    build: .
+    build: *app-build
     container_name: np-flower
     restart: unless-stopped
     command: >

@@ -1,0 +1,11 @@
+# Optional local embeddings (celery-embeddings / ECR embeddings image).
+#
+# Install CPU-only torch from the PyTorch index FIRST (not --extra-index-url:
+# that keeps PyPI as primary and can still pull nvidia-cuda-* on x86_64).
+#
+#   pip install --index-url https://download.pytorch.org/whl/cpu 'torch>=2.1.0,<3'
+#   pip install -r requirements-embeddings.txt
+#
+# Docker target `embeddings` runs those two steps in the Dockerfile.
+
+sentence-transformers==5.4.1
