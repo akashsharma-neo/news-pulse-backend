@@ -48,6 +48,8 @@ python manage.py prune_stale_content
 python manage.py prune_stale_content --dry-run
 ```
 
+`prune_stale_content` deletes clusters with `created_at` before the cutoff, then articles with `fetched_at` before the cutoff **except** articles still linked to a cluster on or after the cutoff (avoids CASCADE dropping newer clusters when the primary article is older).
+
 After deploy, for existing data:
 
 1. `python manage.py migrate`
