@@ -29,7 +29,7 @@ echo "Region: ${AWS_REGION}  Project: ${PROJECT}"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 echo "Account: ${ACCOUNT_ID}"
 
-for repo in newspulse-api newspulse-web; do
+for repo in newspulse-api newspulse-api-embeddings newspulse-web; do
 	if aws ecr describe-repositories --repository-names "$repo" --region "$AWS_REGION" &>/dev/null; then
 		echo "ECR repo exists: ${repo}"
 	else

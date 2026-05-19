@@ -6,6 +6,7 @@ Guides for running and deploying this Django API.
 - [production-security.md](production-security.md) — prod checklist, API hardening, LAN vs public deploy.
 - [aws-deployment.md](aws-deployment.md) — AWS infra plan (~100 users): EC2 + Compose + ECR, cost, scaling path, [deploy cheatsheet](aws-deployment.md#deploy-cheatsheet-logs--debugging).
 - [github-actions-ecr.md](github-actions-ecr.md) — CI build/push to ECR on merge to `main` (dev → PR → main), GitHub secrets setup.
+- [docker-images.md](docker-images.md) — slim API image vs optional embeddings image (no CUDA in prod).
 - [deploy/README.md](../deploy/README.md) — production scripts: bootstrap, ECR deploy, Cloudflare/SES, smoke tests.
 - [static-files-docker.md](static-files-docker.md) — serving `/static/` (admin, DRF, Swagger) in Docker with Gunicorn.
 - [seed-tabs-and-sources.md](seed-tabs-and-sources.md) — populating category tabs and RSS/web sources for scraping.

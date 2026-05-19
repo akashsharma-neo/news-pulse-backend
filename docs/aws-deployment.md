@@ -77,7 +77,7 @@ The browser calls the API on the **public API hostname** (`NEXT_PUBLIC_API_URL`)
 | **App Runner** | OK for one web container; still need an always-on Celery worker + model cache volume. |
 | **ECS Fargate + RDS + ALB** | Good **phase 2** (~$90–130/mo). Use after validating on a single box. |
 
-**ECR** is still recommended: push pre-built images from CI instead of compiling PyTorch on the instance.
+**ECR** is still recommended: push pre-built slim API images from CI (no PyTorch in the default image).
 
 **API Gateway:** skip initially. Terminate TLS at Cloudflare or Caddy; Django already applies per-IP/user rate limits (see [production-security.md](production-security.md)).
 
@@ -89,7 +89,7 @@ The browser calls the API on the **public API hostname** (`NEXT_PUBLIC_API_URL`)
 |-----------------|------------|-------|
 | `django` | Yes | Expose only via reverse proxy |
 | `frontend` | Yes | Build with prod `NEXT_PUBLIC_*` (see below) |
-| `celery` | Yes | Needs ~2 GiB+ free RAM for `sentence-transformers` |
+| `celery` | Yes | Scrape/cluster/summarize only (no PyTorch in slim image) |
 | `celerybeat` | Yes | Exactly one beat instance |
 | `postgres` | Yes | pgvector via [docker/postgres/init-pgvector.sql](../docker/postgres/init-pgvector.sql) |
 | `redis` | Yes | Celery broker + Django cache |
