@@ -2,6 +2,9 @@
 #   cp docker-compose.lan.example.yml docker-compose.override.yml
 #   docker compose up -d
 #
+# Overrides port bindings for Django and Frontend only (0.0.0.0). Postgres, Redis,
+# Flower, and Metabase stay on 127.0.0.1 from the base docker-compose.yml.
+#
 # Set NEWSMINE_DEV_HOST in .env (prefer YourMac.local for phone testing; see scripts/dev-host.sh).
 # Mirror the host in news-pulse-frontend/.env.local (NEXT_PUBLIC_API_URL, ALLOWED_DEV_ORIGINS).
 # For Next.js dev on a phone: npm run dev -- -H 0.0.0.0 -p 3000

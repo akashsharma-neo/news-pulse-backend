@@ -7,7 +7,8 @@ How NewsPulse separates dev convenience from production hardening, and what to c
 | Concern | Development | Production (`NEWSMINE_ENV=prod`) |
 |--------|-------------|----------------------------------|
 | Docker API/UI ports | `127.0.0.1` only in base [docker-compose.yml](../docker-compose.yml) | Do not publish DB/Redis/Flower; use a reverse proxy for HTTPS |
-| LAN / phone testing | Optional [docker-compose.lan.example.yml](../docker-compose.lan.example.yml) → `docker-compose.override.yml` (gitignored) | Not used |
+| LAN / phone testing | Optional [docker-compose.lan.example.yml](../docker-compose.lan.example.yml) → `docker-compose.override.yml` (gitignored); opens **Django + Frontend only**, not Postgres/Redis | Not used |
+| macOS `localhost` vs `127.0.0.1` | Base bind is IPv4 loopback; use **http://127.0.0.1:3000** if `http://localhost:3000` hangs | N/A |
 | Next.js HMR (`allowedDevOrigins`) | Only when `NODE_ENV=development` or `NEXT_PUBLIC_NEWSMINE_ENV=dev` | Disabled in production builds |
 | Swagger `/api/docs/` | Enabled when `NEWSMINE_ENV=dev` | Disabled |
 | `DJANGO_DEBUG` | May be `true` | Forced `false`; startup fails if misconfigured |

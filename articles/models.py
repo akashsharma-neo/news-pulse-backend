@@ -185,6 +185,16 @@ class TopicCluster(models.Model):
         default="",
         help_text="Display image URL (publisher lead image or tab placeholder)",
     )
+    suggested_prompts = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Up to 3 short tap-to-ask questions for Nex chat",
+    )
+    keywords = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Extracted keywords for search and autocomplete, e.g. ['election', 'modi']",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

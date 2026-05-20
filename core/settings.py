@@ -1,11 +1,14 @@
 """NewsPulse Django settings — configuration for database, REST framework, Celery, and third-party services."""
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
 
 from core.env_config import apply_profile
+
+_IS_TEST = 'test' in sys.argv or os.environ.get('NEWSMINE_ENV') == 'test'
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -131,12 +134,12 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
         'rest_framework.throttling.ScopedRateThrottle',
-    ),
+    ) if os.environ.get('NEWSMINE_ENV') != 'test' else (),
     'DEFAULT_THROTTLE_RATES': {
         'anon': '120/hour',
         'user': '2000/hour',
-        'auth': '30/hour',
-        'chat_send': '60/hour',
+        'auth': '20/hour',
+        'chat_send': '30/hour',
         'digest_subscribe': '10/hour',
     },
 }
@@ -231,7 +234,7 @@ OPENAI_MODEL = OPENAI_COMPATIBLE_MODEL
 # Swagger / OpenAPI (drf-spectacular)
 # ---------------------------------------------------------------------------
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'NewsPulse API',
+    'TITLE': 'NewsMine API',
     'DESCRIPTION': 'Conversational news aggregator — scrape, cluster, summarize, chat.',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
@@ -245,7 +248,7 @@ SPECTACULAR_SETTINGS = {
 # ---------------------------------------------------------------------------
 # Scraper settings
 # ---------------------------------------------------------------------------
-SCRAPER_USER_AGENT = 'NewsPulse/1.0 (News Aggregator; +https://newspulse.app; contact@newspulse.app)'
+SCRAPER_USER_AGENT = 'NewsMine/1.0 (News Aggregator; +https://newsmine.app; contact@newsmine.app)'
 SCRAPER_DELAY = 1.0  # seconds between requests to same domain
 
 # CORS — comma-separated origins in CORS_ALLOWED_ORIGINS
@@ -267,7 +270,11 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'news@newspulse.app')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'news@newsmine.app')
+
+# Auth — email verification links point at the Next.js app
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+EMAIL_VERIFICATION_EXPIRY_HOURS = int(os.environ.get('EMAIL_VERIFICATION_EXPIRY_HOURS', '24'))
 
 # Base URL for unsubscribe links (set in dev .env)
 BASE_URL = os.environ.get('BASE_URL', 'http://localhost:8000')
@@ -356,3 +363,30 @@ def _validate_deployed_settings() -> None:
 
 
 _validate_deployed_settings()
+
+if _IS_TEST:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
+    try:
+        from rest_framework.throttling import SimpleRateThrottle
+        SimpleRateThrottle.THROTTLE_RATES = {
+            'anon': '1000000/hour',
+            'user': '1000000/hour',
+            'auth': '1000000/hour',
+            'chat_send': '1000000/hour',
+            'digest_subscribe': '1000000/hour',
+        }
+    except ImportError:
+        pass
+
+# ---------------------------------------------------------------------------
+# Quota / Rate Limiting (Redis)
+# ---------------------------------------------------------------------------
+REDIS_QUOTA_URL = os.environ.get('REDIS_QUOTA_URL', os.environ.get('REDIS_URL', 'redis://localhost:6379/1'))
+
+GUEST_AI_CHAT_MONTHLY_LIMIT = int(os.environ.get('GUEST_AI_CHAT_MONTHLY_LIMIT', '50'))
+USER_AI_CHAT_MONTHLY_LIMIT = int(os.environ.get('USER_AI_CHAT_MONTHLY_LIMIT', '200'))
+

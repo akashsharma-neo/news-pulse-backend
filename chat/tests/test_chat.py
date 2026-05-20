@@ -170,13 +170,16 @@ class ChatAPITest(TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["content"], "Hi")
 
-    def test_list_messages_requires_auth(self):
+    def test_list_messages_anonymous(self):
+        """Chat history is publicly accessible per cluster (no auth needed)."""
         response = self.client.get(f"/api/messages/?cluster_id={self.cluster.pk}")
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 200)
 
-    def test_send_message_requires_auth(self):
+    def test_send_message_requires_device_id(self):
+        """Anonymous send requires X-Device-ID header."""
         response = self.client.post("/api/messages/send/", {"cluster_id": 1, "content": "Hi"}, format="json")
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("X-Device-ID", str(response.data))
 
     def test_send_message_missing_fields(self):
         self._login()

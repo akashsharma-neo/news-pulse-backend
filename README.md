@@ -1,6 +1,6 @@
-# NewsPulse backend
+# NewsMine backend
 
-Django REST API, Celery workers, and Docker Compose stack for the NewsPulse service.
+Django REST API, Celery workers, and Docker Compose stack for the NewsMine service.
 
 **Operational docs:** [docs/README.md](docs/README.md)
 

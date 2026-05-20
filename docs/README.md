@@ -1,4 +1,4 @@
-# NewsPulse backend — operational docs
+# NewsMine backend — operational docs
 
 Guides for running and deploying this Django API.
 
@@ -16,5 +16,6 @@ Guides for running and deploying this Django API.
 - [django-admin-ops.md](django-admin-ops.md) — admin changelist totals, scrape/cluster actions, **Mark pending summaries done** (local, no LLM).
 - [flower-celery-monitoring.md](flower-celery-monitoring.md) — Flower vs Beat, task events, and triggering tasks.
 - [metabase.md](metabase.md) — Metabase UI for exploring Postgres data in Docker.
-- [article-chat.md](article-chat.md) — article-detail AI chat API, OpenRouter env, and verification.
+- [article-chat.md](article-chat.md) — Nex article-detail chat API, suggested questions, OpenRouter env, and verification.
+- [auth.md](auth.md) — User login: email verification, Firebase Google/phone OTP, JWT API, env setup.
 - [article-images.md](article-images.md) — scrape images, cluster display URLs, placeholders, and S3.

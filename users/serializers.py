@@ -96,16 +96,31 @@ class UserRegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop("password_confirm")
         validated_data.setdefault("name", "")
+        validated_data["email_verified"] = False
         return User.objects.create_user(**validated_data)
 
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for the current user's profile."""
 
+    monthly_ai_chat_remaining = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ["email", "phone", "name", "date_joined"]
-        read_only_fields = ["email", "date_joined"]
+        fields = [
+            "email", "phone", "name", "date_joined",
+            "email_verified", "phone_verified",
+            "monthly_ai_chat_used", "monthly_ai_chat_limit", "monthly_ai_chat_remaining",
+        ]
+        read_only_fields = [
+            "email", "date_joined", "email_verified", "phone_verified",
+            "monthly_ai_chat_used", "monthly_ai_chat_limit", "monthly_ai_chat_remaining",
+        ]
+
+    def get_monthly_ai_chat_remaining(self, obj) -> int:
+        if obj.monthly_ai_chat_limit <= 0:
+            return 0
+        return max(0, obj.monthly_ai_chat_limit - obj.monthly_ai_chat_used)
 
 
 class TokenObtainPairSerializer(serializers.Serializer):
@@ -151,17 +166,23 @@ class TokenObtainPairSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid credentials.")
         if not user.is_active:
             raise serializers.ValidationError("User account is disabled.")
+        if not user.email_verified:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(
+                {"code": "email_not_verified", "detail": "Please verify your email before signing in."}
+            )
 
-        # Use the standard simplejwt token generation
-        from rest_framework_simplejwt.tokens import RefreshToken
-        refresh = RefreshToken.for_user(user)
+        from .auth_tokens import jwt_response
+        return jwt_response(user)
 
-        return {
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
-            "user": {
-                "email": user.email,
-                "phone": user.phone,
-                "name": user.name,
-            },
-        }
+
+class VerifyEmailSerializer(serializers.Serializer):
+    token = serializers.UUIDField()
+
+
+class ResendVerificationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class FirebaseAuthSerializer(serializers.Serializer):
+    id_token = serializers.CharField()

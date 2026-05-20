@@ -7,6 +7,8 @@ Models:
     UserPreference — Stored user preferences for personalization tuning
 """
 
+import uuid
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
@@ -26,7 +28,10 @@ class UserManager(BaseUserManager):
         email = self.normalize_email(email)
         name = name or ""
         user = self.model(email=email, phone=phone, name=name, **extra_fields)
-        user.set_password(password)
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
         user.save(using=self._db)
         return user
 
@@ -68,6 +73,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(default=timezone.now, editable=False)
     is_staff = models.BooleanField(default=False)
 
+    monthly_ai_chat_used = models.IntegerField(default=0)
+    monthly_ai_chat_limit = models.IntegerField(default=200)
+    quota_reset_at = models.DateTimeField(null=True, blank=True)
+
+    email_verified = models.BooleanField(default=False)
+    phone_verified = models.BooleanField(default=False)
+    firebase_uid = models.CharField(max_length=128, unique=True, null=True, blank=True)
+
     objects = UserManager()
 
     USERNAME_FIELD = "email"
@@ -83,6 +96,32 @@ class User(AbstractBaseUser, PermissionsMixin):
     def full_name(self):
         """Return the user's full name."""
         return self.name.strip() if self.name else ""
+
+
+class EmailVerificationToken(models.Model):
+    """One-time token for verifying email after registration."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="verification_tokens")
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "users_emailverificationtoken"
+        indexes = [
+            models.Index(fields=["token"]),
+            models.Index(fields=["user", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"verify:{self.user.email}:{self.token}"
+
+    @property
+    def is_valid(self) -> bool:
+        if self.used_at is not None:
+            return False
+        return timezone.now() < self.expires_at
 
 
 # ---------------------------------------------------------------------------

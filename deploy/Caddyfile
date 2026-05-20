@@ -4,6 +4,19 @@
 
 {
 	email {$CADDY_ACME_EMAIL:admin@localhost}
+
+	rate_limit {
+		zone general {
+			key {remote_host}
+			events 60
+			window 1m
+		}
+		zone chat_endpoint {
+			key {remote_host}
+			events 10
+			window 1m
+		}
+	}
 }
 
 {$CADDY_DOMAIN_WWW} {
@@ -13,9 +26,22 @@
 
 {$CADDY_DOMAIN_API} {
 	encode gzip
-	reverse_proxy django:8000 {
-		header_up Host {host}
-		header_up X-Forwarded-Proto {scheme}
-		header_up X-Forwarded-For {remote_host}
+
+	route /api/messages/* {
+		rate_limit zone chat_endpoint
+		reverse_proxy django:8000 {
+			header_up Host {host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	route /* {
+		rate_limit zone general
+		reverse_proxy django:8000 {
+			header_up Host {host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-For {remote_host}
+		}
 	}
 }

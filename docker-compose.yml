@@ -19,6 +19,12 @@
 #
 # Environment: copy config/env/dev.example to .env (default NEWSMINE_ENV=dev).
 # See docs/environments.md.
+#
+# Port bindings: Postgres, Redis, Flower, and Metabase publish on 127.0.0.1 only
+# (not exposed to LAN). Django and Frontend use 127.0.0.1 in this file too.
+# On macOS, prefer http://127.0.0.1:3000 over http://localhost:3000 (IPv6).
+# For phone/LAN testing, merge docker-compose.lan.example.yml — it opens only
+# Django and Frontend on all interfaces; it does not expose Postgres or Redis.
 # ===========================
 
 x-app-build: &app-build

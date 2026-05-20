@@ -42,6 +42,17 @@ REDIS_URL=
 
 NEXT_PUBLIC_NEWSMINE_ENV=prod
 NEXT_PUBLIC_API_URL=
+FRONTEND_URL=https://your-frontend-domain
+
+# Firebase (backend service account JSON or file path)
+# FIREBASE_CREDENTIALS_JSON=
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/firebase-service-account.json
+
+# Firebase web (frontend — set in news-pulse-frontend deploy env too)
+# NEXT_PUBLIC_FIREBASE_API_KEY=
+# NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+# NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+# NEXT_PUBLIC_FIREBASE_APP_ID=
 
 # Amazon SES SMTP (see deploy/cloudflare-ses.md)
 # EMAIL_HOST=email-smtp.ap-south-1.amazonaws.com

@@ -8,7 +8,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
 from core.admin_mixins import TotalCountChangeListMixin
-from .models import User, UserInteraction, UserPreference
+from .models import User, UserInteraction, UserPreference, EmailVerificationToken
 
 
 @admin.register(User)
@@ -19,14 +19,14 @@ class UserAdmin(TotalCountChangeListMixin, BaseUserAdmin):
     email or phone number.
     """
 
-    list_display = ["email", "phone", "name", "is_active", "is_staff", "date_joined"]
+    list_display = ["email", "phone", "name", "email_verified", "phone_verified", "is_active", "is_staff", "date_joined"]
     list_filter = ["is_active", "is_staff", "date_joined"]
     search_fields = ["email", "phone", "name"]
     ordering = ["-date_joined"]
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Personal info", {"fields": ("phone", "name")}),
+        ("Personal info", {"fields": ("phone", "name", "firebase_uid", "email_verified", "phone_verified")}),
         ("Permissions", {
             "fields": ("is_active", "is_staff", "is_superuser"),
         }),

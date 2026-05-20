@@ -387,5 +387,46 @@ def build_summarize_prompt(
     )
 
 
+def extract_keywords(text: str, max_keywords: int = 8) -> list[str]:
+    """Extract top keywords from text using frequency-based scoring.
+
+    Tokenizes, filters stopwords and short words, returns top-N by frequency.
+    """
+    import re
+    STOPWORDS = {
+        "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+        "of", "with", "by", "from", "as", "is", "was", "are", "were", "be",
+        "been", "being", "have", "has", "had", "do", "does", "did", "will",
+        "would", "could", "should", "may", "might", "shall", "can", "need",
+        "dare", "ought", "used", "this", "that", "these", "those", "it",
+        "its", "they", "them", "their", "he", "she", "his", "her", "him",
+        "we", "us", "our", "you", "your", "i", "me", "my", "who", "whom",
+        "whose", "which", "what", "not", "no", "nor", "so", "if", "than",
+        "then", "also", "very", "just", "about", "over", "into", "after",
+        "before", "between", "under", "again", "further", "once", "here",
+        "there", "when", "where", "why", "how", "all", "each", "every",
+        "both", "few", "more", "most", "other", "some", "such", "only",
+        "own", "same", "too", "up", "down", "out", "off", "above", "below",
+        "new", "old", "now", "then", "while", "since", "until", "against",
+        "during", "without", "through", "because", "along", "among",
+    }
+
+    text = (text or "").strip()
+    if not text:
+        return []
+
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z]{2,}", text.lower())
+    tokens = [t for t in tokens if t not in STOPWORDS and len(t) > 2]
+    if not tokens:
+        return []
+
+    freq: dict[str, int] = {}
+    for t in tokens:
+        freq[t] = freq.get(t, 0) + 1
+
+    ranked = sorted(freq.items(), key=lambda x: (-x[1], x[0]))
+    return [word for word, count in ranked[:max_keywords]]
+
+
 def is_summary_too_short(summary: str, min_words: int = SUMMARY_MIN_ACCEPT_WORDS) -> bool:
     return word_count(clean_article_text(summary)) < min_words

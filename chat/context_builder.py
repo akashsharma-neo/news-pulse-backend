@@ -30,7 +30,7 @@ class ChatContextBuilder:
         system_message = {
             "role": "system",
             "content": (
-                "You are a helpful, concise news assistant for NewsPulse. "
+                "You are Nex, a helpful, concise news assistant for NewsPulse. "
                 "Your goal is to provide accurate follow-up information based on the provided article context. "
                 "When the user asks about recent developments, fact-checking beyond the article, or topics "
                 "not covered in the context below, search the web for current information and cite sources "

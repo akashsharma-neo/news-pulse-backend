@@ -27,6 +27,7 @@ from articles.cluster_dedup import (
     find_matching_topic_cluster,
     merge_articles_into_cluster,
 )
+from articles.nex_prompts import save_nex_prompts_for_cluster
 from articles.image_resolver import extract_rss_image, extract_web_image, pick_cluster_image
 from articles.models import Article, Source, Tab, TopicCluster
 from articles.url_utils import article_exists_for_url, normalize_article_url
@@ -36,6 +37,7 @@ from worker.article_content import (
     build_summarize_prompt,
     clean_article_text,
     enrich_article_content,
+    extract_keywords,
     extract_listing_content,
     extract_rss_entry_content,
     fallback_summary_from_article,
@@ -776,7 +778,9 @@ def summarize_clusters(self) -> dict:
 
         if len(source_names) <= 1 and is_usable_article_body(article.full_text or "", source_name):
             cluster.summary = fallback_summary_from_article(article)
-            cluster.save(update_fields=["summary"])
+            cluster.keywords = extract_keywords(cluster.summary)
+            cluster.save(update_fields=["summary", "keywords"])
+            save_nex_prompts_for_cluster(cluster, client, model)
             summarized += 1
             logger.info(
                 "Excerpt summary for cluster %s (single-source, no LLM)",
@@ -839,7 +843,9 @@ def summarize_clusters(self) -> dict:
                 skipped += 1
                 continue
             cluster.summary = summary
-            cluster.save(update_fields=["summary"])
+            cluster.keywords = extract_keywords(summary)
+            cluster.save(update_fields=["summary", "keywords"])
+            save_nex_prompts_for_cluster(cluster, client, model)
             summarized += 1
             logger.info("Summarized cluster %s: '%s'", cluster.pk, summary[:80])
         except RateLimitError as exc:

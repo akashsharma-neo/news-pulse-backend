@@ -27,6 +27,9 @@ from .views import (
     LoginView,
     MeView,
     LogoutView,
+    VerifyEmailView,
+    ResendVerificationView,
+    FirebaseAuthView,
 )
 
 # Personalization router
@@ -41,6 +44,9 @@ urlpatterns = [
     path("", include(router.urls)),
     path("auth/register/", RegisterView.as_view(), name="register"),
     path("auth/login/", LoginView.as_view(), name="login"),
+    path("auth/verify-email/", VerifyEmailView.as_view(), name="verify-email"),
+    path("auth/resend-verification/", ResendVerificationView.as_view(), name="resend-verification"),
+    path("auth/firebase/", FirebaseAuthView.as_view(), name="firebase-auth"),
     path("auth/me/", MeView.as_view(), name="me"),
     path("auth/logout/", LogoutView.as_view(), name="logout"),
     path("auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),

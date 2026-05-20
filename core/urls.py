@@ -12,6 +12,7 @@ from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from core.health import health
+from users.quota_views import QuotaView
 
 urlpatterns = [
     path('health/', health, name='health'),
@@ -30,4 +31,5 @@ urlpatterns += [
     path('api/', include('chat.urls')),
     path('api/', include('digest.urls')),
     path('api/', include('users.urls')),
+    path('api/quota/', QuotaView.as_view(), name='quota'),
 ]

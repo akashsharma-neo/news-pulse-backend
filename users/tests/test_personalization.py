@@ -22,6 +22,13 @@ from articles.models import Tab, Source, Article, TopicCluster
 from users.models import User, UserInteraction, UserPreference
 from users.views import _decay_factor, _get_session_id
 
+_THROTTLE_OVERRIDE = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_THROTTLE_CLASSES': [],
+}
+
 
 # ---------------------------------------------------------------------------
 # Helper factories
@@ -210,6 +217,7 @@ class UserPreferenceModelTest(TestCase):
 # Interaction API tests
 # ---------------------------------------------------------------------------
 
+@override_settings(REST_FRAMEWORK=_THROTTLE_OVERRIDE)
 class InteractionAPITest(TestCase):
     """Tests for the interaction recording API."""
 
@@ -428,6 +436,7 @@ class AffinityCalculationTest(TestCase):
 # Personalized feed API tests
 # ---------------------------------------------------------------------------
 
+@override_settings(REST_FRAMEWORK=_THROTTLE_OVERRIDE)
 class PersonalizedFeedAPITest(TestCase):
     """Tests for the personalized feed endpoint."""
 
@@ -549,6 +558,7 @@ class PersonalizedFeedAPITest(TestCase):
 # Affinity API tests
 # ---------------------------------------------------------------------------
 
+@override_settings(REST_FRAMEWORK=_THROTTLE_OVERRIDE)
 class AffinityAPITest(TestCase):
     """Tests for the affinity profile endpoint."""
 

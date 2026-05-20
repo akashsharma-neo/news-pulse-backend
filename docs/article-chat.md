@@ -1,6 +1,25 @@
-# Article-detail AI chat
+# Article-detail AI chat (Nex)
 
-Per-cluster chat on the article detail page (`/article/{id}`) uses the Django chat API and an OpenAI-compatible LLM (OpenRouter by default).
+Per-cluster chat on the article detail page (`/article/{id}`) uses the Django chat API and an OpenAI-compatible LLM (OpenRouter by default). The assistant is branded **Nex** in the UI and system prompt.
+
+## Nex suggested questions
+
+Each `TopicCluster` may include `suggested_prompts`: up to three short, story-specific questions shown when the chat thread is empty. They are generated after summarization (or via backfill) and returned on `GET /api/clusters/{id}/`.
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `suggested_prompts` | `string[]` | Max 3 items, ~12 words each; answerable from the cluster summary |
+
+**Generation:** [`articles/nex_prompts.py`](../articles/nex_prompts.py) — second lightweight LLM call in `summarize_clusters` (failures fall back to title-aware templates; never fail summarization).
+
+**Backfill existing clusters:**
+
+```bash
+python manage.py backfill_cluster_suggestions --dry-run
+python manage.py backfill_cluster_suggestions --limit 50
+```
+
+**Frontend:** [`SlideOutChatPanel.tsx`](../../news-pulse-frontend/src/components/SlideOutChatPanel.tsx) — empty state shows “Ask Nex” + chips; tap uses the same `POST /api/messages/send/` path as typed input. Generic fallbacks in [`nexPrompts.ts`](../../news-pulse-frontend/src/lib/nexPrompts.ts) when the API returns `[]`.
 
 ## Endpoints
 
@@ -63,10 +82,11 @@ Restart the Django web container/process after changing env vars.
 ## Verify
 
 1. Ensure at least one cluster exists with a summary (`GET /api/clusters/`).
-2. Open `/article/{id}` in the frontend, tap **Ask AI about this story**.
-3. Send a question; confirm `POST /api/messages/send/` in the browser network tab.
-4. Reply should reference the article context, not a placeholder string.
-5. Close and reopen chat; prior messages should load via `GET /api/messages/?cluster_id=`.
+2. Open `/article/{id}` in the frontend, tap **Ask Nex**.
+3. With an empty thread, confirm three suggestion chips; tap one and get a Nex reply.
+4. Send a typed question; confirm `POST /api/messages/send/` in the browser network tab.
+5. Reply should reference the article context, not a placeholder string.
+6. Close and reopen chat; prior messages should load via `GET /api/messages/?cluster_id=` (chips hidden when history exists).
 
 **curl (send):**
 

@@ -13,6 +13,50 @@ from worker.article_content import clean_article_text, truncate_at_sentence_boun
 from .models import Tab, Source, Article, TopicCluster
 
 
+class SearchResultSerializer(serializers.Serializer):
+    """Serialize an Article for search results with highlighted snippet."""
+
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    url = serializers.URLField()
+    source_name = serializers.CharField(source="source.name")
+    category_slug = serializers.CharField(source="source.category.slug")
+    published_at = serializers.DateTimeField()
+    summary = serializers.CharField()
+    source_image_url = serializers.URLField()
+    headline = serializers.CharField(read_only=True, default="")
+
+
+class SuggestionSerializer(serializers.Serializer):
+    """Serialize a search suggestion (keyword or title)."""
+
+    text = serializers.CharField(help_text="Suggested search text")
+    type = serializers.ChoiceField(
+        choices=["keyword", "title"],
+        help_text="Whether this is a keyword or article title suggestion",
+    )
+
+
+class TrendingSerializer(serializers.Serializer):
+    """Serialize a trending topic."""
+
+    text = serializers.CharField(help_text="Trending topic name or label")
+    type = serializers.ChoiceField(
+        choices=["tab", "cluster"],
+        help_text="Type of trending item: tab (browse category) or cluster (popular story)",
+    )
+    slug = serializers.CharField(
+        help_text="Tab slug for tab type, or empty for cluster",
+        required=False,
+        default="",
+    )
+    cluster_id = serializers.IntegerField(
+        help_text="Cluster ID for cluster type, or null",
+        required=False,
+        default=None,
+    )
+
+
 class TabSerializer(serializers.ModelSerializer):
     """Serialize a Tab (news category) for API responses."""
 
@@ -102,15 +146,29 @@ class TopicClusterSerializer(serializers.ModelSerializer):
     source_names = serializers.SerializerMethodField(
         help_text="List of all source names contributing to this cluster",
     )
+    suggested_prompts = serializers.ListField(
+        child=serializers.CharField(max_length=120),
+        read_only=True,
+        help_text="Up to 3 Nex tap-to-ask questions for this story",
+    )
 
     class Meta:
         model = TopicCluster
         fields = [
             "id", "topic_id", "primary_title", "primary_url",
             "source_name", "category_slug", "published_at",
-            "summary", "source_names", "image_url", "created_at",
+            "summary", "source_names", "image_url", "suggested_prompts",
+            "created_at",
         ]
         read_only_fields = fields
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        prompts = instance.suggested_prompts if isinstance(instance.suggested_prompts, list) else []
+        data["suggested_prompts"] = [
+            str(p).strip() for p in prompts[:3] if p and str(p).strip()
+        ]
+        return data
 
     def get_image_url(self, obj: TopicCluster) -> str:
         """Resolved display image: cluster field, primary article, or placeholder."""

@@ -45,7 +45,17 @@ from .serializers import (
     UserRegisterSerializer,
     UserSerializer,
     TokenObtainPairSerializer,
+    VerifyEmailSerializer,
+    ResendVerificationSerializer,
+    FirebaseAuthSerializer,
 )
+from .email_verification import (
+    create_verification_token,
+    send_verification_email,
+    mark_email_verified,
+)
+from .auth_tokens import jwt_response, user_payload
+from .models import EmailVerificationToken
 
 # ---------------------------------------------------------------------------
 # Affinity constants
@@ -135,16 +145,15 @@ class RegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            "user": {
-                "email": user.email,
-                "phone": user.phone,
-                "name": user.name,
+        token = create_verification_token(user)
+        send_verification_email(user, token)
+        return Response(
+            {
+                "detail": "Account created. Check your email to verify before signing in.",
+                "user": user_payload(user),
             },
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
-        }, status=status.HTTP_201_CREATED)
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class LoginView(APIView):
@@ -162,6 +171,95 @@ class LoginView(APIView):
         serializer = TokenObtainPairSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+class VerifyEmailView(APIView):
+    """Verify email with token and return JWT tokens.
+
+    POST /api/auth/verify-email/
+    Body: { "token": "<uuid>" }
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def post(self, request: Request) -> Response:
+        serializer = VerifyEmailSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token_value = serializer.validated_data["token"]
+
+        try:
+            record = EmailVerificationToken.objects.select_related("user").get(token=token_value)
+        except EmailVerificationToken.DoesNotExist:
+            return Response({"error": "Invalid or expired verification link."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not record.is_valid:
+            return Response({"error": "Invalid or expired verification link."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = record.user
+        record.used_at = django_tz.now()
+        record.save(update_fields=["used_at"])
+        mark_email_verified(user)
+        return Response(jwt_response(user), status=status.HTTP_200_OK)
+
+
+class ResendVerificationView(APIView):
+    """Resend verification email for an unverified account.
+
+    POST /api/auth/resend-verification/
+    Body: { "email": "..." }
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def post(self, request: Request) -> Response:
+        serializer = ResendVerificationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"].lower()
+
+        generic = {"detail": "If an account exists for this email, a verification link was sent."}
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            return Response(generic, status=status.HTTP_200_OK)
+
+        if user.email_verified:
+            return Response(generic, status=status.HTTP_200_OK)
+
+        token = create_verification_token(user)
+        send_verification_email(user, token)
+        return Response(generic, status=status.HTTP_200_OK)
+
+
+class FirebaseAuthView(APIView):
+    """Exchange a Firebase ID token for Django JWT tokens.
+
+    POST /api/auth/firebase/
+    Body: { "id_token": "..." }
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def post(self, request: Request) -> Response:
+        serializer = FirebaseAuthSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        id_token = serializer.validated_data["id_token"]
+
+        try:
+            from .firebase_service import verify_firebase_id_token, resolve_user_from_firebase_claims
+            claims = verify_firebase_id_token(id_token)
+            user = resolve_user_from_firebase_claims(claims)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({"error": "Invalid Firebase token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        return Response(jwt_response(user), status=status.HTTP_200_OK)
 
 
 class MeView(APIView):
@@ -469,6 +567,10 @@ class PersonalizedClusterViewSet(viewsets.ReadOnlyModelViewSet):
 
         GET /api/clusters/personalized/?session_id=<uuid>&tab=india&hours=168
 
+        Uses a two-pass approach to avoid loading all clusters into memory:
+        pass 1 — lightweight values query to rank all cluster PKs,
+        pass 2 — full select_related + serialization only for the current page.
+
         Args:
             request: DRF request with session_id and optional params.
 
@@ -504,58 +606,79 @@ class PersonalizedClusterViewSet(viewsets.ReadOnlyModelViewSet):
             for k in affinity:
                 affinity[k] = affinity[k] / max_affinity
 
-        # Get all clusters (with optional tab filter)
+        # Pass 1: lightweight ranking query (IDs only)
         tab = request.query_params.get("tab")
         qs = TopicCluster.objects.select_related(
             "primary_article",
             "primary_article__source",
             "primary_article__source__category",
-        ).all()
+        )
         if tab:
             qs = qs.filter(primary_article__source__category__slug=tab)
 
-        # Compute rank scores
-        ranked_items = []
-        for cluster in qs:
-            category_slug = cluster.primary_article.source.category.slug
+        ranking_data = qs.values(
+            "pk",
+            "primary_article__source__category__slug",
+            "primary_article__published_at",
+        )
+
+        ranked_ids = []
+        for entry in ranking_data:
+            category_slug = entry["primary_article__source__category__slug"]
             affinity_score = affinity.get(category_slug, 0.0)
 
-            # Recency bonus: clusters published in last 24h get up to 0.3
-            pub_at = cluster.primary_article.published_at
+            pub_at = entry["primary_article__published_at"]
             if pub_at:
                 hours_since = (now - pub_at).total_seconds() / 3600
-                if hours_since < _RECENTNESS_WINDOW_HOURS:
-                    recency_bonus = _RECENTNESS_BONUS_MAX * (
-                        1 - hours_since / _RECENTNESS_WINDOW_HOURS
-                    )
-                else:
-                    recency_bonus = 0.0
+                recency_bonus = (
+                    _RECENTNESS_BONUS_MAX * (1 - hours_since / _RECENTNESS_WINDOW_HOURS)
+                    if hours_since < _RECENTNESS_WINDOW_HOURS
+                    else 0.0
+                )
             else:
                 recency_bonus = 0.0
 
-            # Combined rank score
             rank_score = round(affinity_score * 0.7 + recency_bonus * 0.3, 4)
-
-            ranked_items.append({
-                "cluster_data": TopicClusterSerializer(cluster).data,
-                "rank_score": rank_score,
-                "category": category_slug,
-            })
+            ranked_ids.append((entry["pk"], rank_score, category_slug))
 
         # Sort by rank_score descending
-        ranked_items.sort(key=lambda x: x["rank_score"], reverse=True)
+        ranked_ids.sort(key=lambda x: x[1], reverse=True)
 
         # Pagination
         page_size = int(request.query_params.get("page_size", 20))
         page_num = int(request.query_params.get("page", 1))
         start = (page_num - 1) * page_size
         end = start + page_size
-        page_items = ranked_items[start:end]
+        page_slice = ranked_ids[start:end]
+        page_pks = [pk for pk, _, _ in page_slice]
+
+        # Pass 2: full object load + serialize for this page only
+        if page_pks:
+            pk_order = {pk: i for i, pk in enumerate(page_pks)}
+            page_clusters = list(TopicCluster.objects.select_related(
+                "primary_article",
+                "primary_article__source",
+                "primary_article__source__category",
+            ).filter(pk__in=page_pks))
+            page_clusters.sort(key=lambda c: pk_order[c.pk])
+            serializer = TopicClusterSerializer(page_clusters, many=True)
+            results = [
+                {
+                    "cluster": cluster_data,
+                    "rank_score": rank_score,
+                    "category": category_slug,
+                }
+                for cluster_data, (_, rank_score, category_slug) in zip(
+                    serializer.data, page_slice
+                )
+            ]
+        else:
+            results = []
 
         return Response({
-            "count": len(ranked_items),
-            "next": f"?page={page_num + 1}&page_size={page_size}" if end < len(ranked_items) else None,
+            "count": len(ranked_ids),
+            "next": f"?page={page_num + 1}&page_size={page_size}" if end < len(ranked_ids) else None,
             "previous": f"?page={page_num - 1}&page_size={page_size}" if page_num > 1 else None,
-            "results": page_items,
+            "results": results,
             "affinity_profile": {k: round(v, 4) for k, v in sorted(affinity.items(), key=lambda x: x[1], reverse=True)},
         })

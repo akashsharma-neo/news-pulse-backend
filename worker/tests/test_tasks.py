@@ -402,14 +402,14 @@ class SummarizeClustersTaskTest(TestCase):
         self.article.topic_cluster = self.cluster
         self.article.save(update_fields=["topic_cluster"])
 
-    @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, SUMMARIZE_ENABLED=True)
     def test_single_source_uses_fallback(self):
         result = tasks.summarize_clusters()
         self.assertEqual(result["summarized"], 1)
         self.cluster.refresh_from_db()
         self.assertTrue(len(self.cluster.summary) > 0)
 
-    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, OPENAI_COMPATIBLE_API_KEY="sk-test")
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, SUMMARIZE_ENABLED=True, OPENAI_COMPATIBLE_API_KEY="sk-test")
     @patch("openai.OpenAI")
     def test_multi_source_calls_openai(self, mock_openai):
         cnn_src = Source.objects.create(
