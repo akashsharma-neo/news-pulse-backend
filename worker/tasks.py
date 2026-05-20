@@ -61,7 +61,8 @@ SCRAPER_CONFIGS = {
     "NDTV": {
         "category": "india",
         "source_type": "rss",
-        "url": "https://feeds.ndtv.com/ndtv/index.xml",
+        # feeds.ndtv.com often returns 403 for server/datacenter clients
+        "url": "https://feeds.feedburner.com/ndtvnews-india-news",
     },
     "Times of India": {
         "category": "india",
@@ -150,7 +151,10 @@ def _fetch_page(url: str, headers: dict = None, retries: int = 3) -> str | None:
     if headers is None:
         headers = {
             "User-Agent": (
-                "NewsPulse/1.0 (News Aggregator; +https://newspulse.app)"
+                "Mozilla/5.0 (compatible; NewsPulse/1.0; +https://newspulse.app)"
+            ),
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
             ),
         }
     last_err = None
@@ -329,7 +333,7 @@ def scrape_source(self, source_id: int) -> dict:
 
         logger.info("Scraping source: %s (%s) — %s", source.name, source_type, url)
 
-        html = _fetch_page(url)
+        html = _fetch_page(url, headers=config.get("headers"))
         if not html:
             raise self.retry(exc=Exception(f"Failed to fetch {url}"))
 

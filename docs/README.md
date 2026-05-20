@@ -11,6 +11,7 @@ Guides for running and deploying this Django API.
 - [static-files-docker.md](static-files-docker.md) — serving `/static/` (admin, DRF, Swagger) in Docker with Gunicorn.
 - [seed-tabs-and-sources.md](seed-tabs-and-sources.md) — populating category tabs and RSS/web sources for scraping.
 - [celery-pipeline.md](celery-pipeline.md) — scrape → cluster → summarize pipeline, Beat schedule, and troubleshooting.
+- [ndtv-feed-403.md](ndtv-feed-403.md) — NDTV RSS 403 / `Failed to fetch feeds.ndtv.com`, Feedburner URL fix.
 - [cluster-summaries.md](cluster-summaries.md) — 100–120 word digests, cluster membership, text cleaning, related API, backfill commands.
 - [feed-dedup.md](feed-dedup.md) — duplicate stories on the tab feed, URL normalization, `dedupe_topic_clusters`.
 - [django-admin-ops.md](django-admin-ops.md) — admin changelist totals, scrape/cluster actions, **Mark pending summaries done** (local, no LLM).

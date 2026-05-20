@@ -17,6 +17,7 @@ class SearchResultSerializer(serializers.Serializer):
     """Serialize an Article for search results with highlighted snippet."""
 
     id = serializers.IntegerField()
+    cluster_id = serializers.IntegerField(source="topic_cluster_id")
     title = serializers.CharField()
     url = serializers.URLField()
     source_name = serializers.CharField(source="source.name")

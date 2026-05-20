@@ -184,9 +184,9 @@ def search_view(request):
     )
 
     articles = (
-        Article.objects.select_related("source", "source__category")
+        Article.objects.select_related("source", "source__category", "topic_cluster")
         .annotate(rank=SearchRank(vector, query), headline=headline)
-        .filter(rank__gte=0.01)
+        .filter(rank__gte=0.01, topic_cluster__isnull=False)
         .order_by("-rank")
     )
     if tab:

@@ -71,8 +71,13 @@ flowchart LR
 # Settings load (from app container)
 docker exec np-django python -c "from django.conf import settings; print(settings.NEWSMINE_ENV, settings.DEBUG)"
 
-# CORS preflight from your frontend origin
-curl -sI -H "Origin: https://www.example.com" "https://api.example.com/api/clusters/tabs/"
+# CORS preflight from your frontend origin (must allow x-device-id)
+curl -sI -X OPTIONS \
+  -H "Origin: https://www.example.com" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: content-type,x-device-id" \
+  "https://api.example.com/api/messages/send/"
+# expect Access-Control-Allow-Headers to include x-device-id
 
 # Swagger disabled
 curl -s -o /dev/null -w "%{http_code}" "https://api.example.com/api/docs/"

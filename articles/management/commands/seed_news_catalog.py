@@ -33,7 +33,7 @@ TABS: list[tuple[str, str, int]] = [
 # URL/source_type overrides still apply for those entries.
 SOURCES_BY_TAB_SLUG: dict[str, list[tuple[str, str, str]]] = {
     "india": [
-        ("NDTV", "https://feeds.ndtv.com/ndtv/index.xml", "rss"),
+        ("NDTV", "https://feeds.feedburner.com/ndtvnews-india-news", "rss"),
         (
             "Times of India",
             "https://timesofindia.indiatimes.com/india",

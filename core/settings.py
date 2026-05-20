@@ -4,6 +4,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
+from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
 
 from core.env_config import apply_profile
@@ -257,6 +258,8 @@ _cors_raw = os.environ.get(
     'http://localhost:3000,http://127.0.0.1:3000',
 )
 CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_raw.split(',') if o.strip()]
+# Frontend sends X-Device-ID on every request for anonymous Nex chat / quota.
+CORS_ALLOW_HEADERS = (*default_headers, 'x-device-id')
 
 # ---------------------------------------------------------------------------
 # Email (SMTP)
