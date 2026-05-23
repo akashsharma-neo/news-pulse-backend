@@ -1,6 +1,22 @@
-# NewsMine backend — operational docs
+# NewsMine / NewsPulse documentation
 
-Guides for running and deploying this Django API.
+All project documentation for the NewsMine workspace lives in this directory (versioned with the Django API repo).
+
+## Product and design
+
+- [product-backlog.md](product-backlog.md) — features, UX, and planning (single backlog)
+- [design.md](design.md) — product concept and architecture (draft)
+- [frontend-theme.md](frontend-theme.md) — Next.js default dark theme tokens
+
+## Development reference
+
+- [AGENTS.md](AGENTS.md) — Next.js agent rules and backend test conventions
+
+## Local dev hostname
+
+When your LAN IP changes, set **`NEWSMINE_DEV_HOST`** once (prefer `YourMac.local` for phone testing). Run [`../../scripts/dev-host.sh`](../../scripts/dev-host.sh) and see [environments.md](environments.md#dev-hostname-newsmine_dev_host).
+
+## Backend operations
 
 - [environments.md](environments.md) — `NEWSMINE_ENV` profiles (dev LM Studio, staging/prod via `.env`), `NEWSMINE_DEV_HOST` for LAN/phone.
 - [production-security.md](production-security.md) — prod checklist, API hardening, LAN vs public deploy.

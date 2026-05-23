@@ -2,7 +2,7 @@
 
 Django REST API, Celery workers, and Docker Compose stack for the NewsMine service.
 
-**Operational docs:** [docs/README.md](docs/README.md)
+**Documentation:** [docs/README.md](docs/README.md) (product backlog, design, frontend theme, runbooks)
 
 | Topic | Doc |
 |-------|-----|
